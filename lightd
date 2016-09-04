@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+
+import datetime
+import time
+
+import pigpio
+import sh
+
+
+human_hosts = ["texus5x", "rexus5x"]
+light_start = datetime.time(9, 00)
+light_end = datetime.time(17, 00)
+suppress_for = datetime.timedelta(hours=1)
+
+light_pin = 4
+
+
+def log(msg):
+    log_file = "/var/log/light.log"
+    tstamp = datetime.datetime.now().isoformat()
+    with open(log_file, 'a') as l:
+        line = "{} - {}\n".format(tstamp, msg)
+        l.write(line)
+
+def light_time(dt):
+    return 1 <= dt.isoweekday() <= 5 and light_start < dt.time() < light_end
+
+def light_ongoing(gpio):
+    return bool(gpio.read(light_pin))
+
+def commence_light(gpio):
+    if not light_ongoing(gpio):
+        log("Commencing light.")
+        gpio.write(light_pin, 1)
+
+def cease_light(gpio):
+    if light_ongoing(gpio):
+        log("Ceasing light.")
+        gpio.write(light_pin, 0)
+
+def ping(host):
+    try:
+        sh.ping("-c", "1", "-W", "1", host)
+        return True
+    except:
+        return False
+
+if __name__ == '__main__':
+    log("****************")
+    log("* Starting up! *")
+    log("****************")
+    suppressed = False
+    suppress_until = datetime.datetime.now()
+    gpio = pigpio.pi()
+
+    while True:
+        now = datetime.datetime.now()
+        if light_time(now):
+            if any(map(ping, human_hosts)):
+                suppress_until = now + suppress_for
+
+            if now < suppress_until:
+                cease_light(gpio)
+                if not suppressed:
+                    log("Suppressing.")
+                    suppressed = True
+            else:
+                if suppressed:
+                    log("Suppression ended.")
+                    suppressed = False
+                commence_light(gpio)
+        else:
+            cease_light(gpio)
+
+        time.sleep(1)
