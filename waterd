@@ -44,16 +44,17 @@ def read_moisture(gpio, pin, adc_channel, spi_channel):
     gpio.write(pin, 1)
     sleep(.005)
 
-    conn = spidev.SpiDev(0, spi_channel)
-    conn.max_speed_hz = 1200000 # 1.2 MHz
     cmd = 128
     if adc_channel:
         cmd += 32
-    reply_bytes = conn.xfer([cmd, 0])
-    reply_bitstring = ''.join(bitstring(n) for n in reply_bytes)
-    reply = reply_bitstring[5:15]
+    with spidev.SpiDev(0, spi_channel) as conn:
+        conn.max_speed_hz = 1200000 # 1.2 MHz
+        reply_bytes = conn.xfer([cmd, 0])
+
     gpio.write(pin, 0)
 
+    reply_bitstring = ''.join(bitstring(n) for n in reply_bytes)
+    reply = reply_bitstring[5:15]
     return int(reply, 2) / 2**10
 
 if __name__ == '__main__':
