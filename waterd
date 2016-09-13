@@ -18,7 +18,7 @@ reads_per_log = 60
 read_interval = 60
 
 Plant = namedtuple("Plant", ("name", "pin", "channel", "readings"))
-plants = [Plant("palm bush", 21, (0, 0), deque(maxlen=window_length))]
+plants = [Plant("palm bush", 21, 0, deque(maxlen=window_length))]
 
 port = 54700
 app = Flask(__name__)
@@ -36,19 +36,17 @@ def water_levels():
     levels = dict((p.name, mean(p.readings)) for p in plants)
     return json.dumps(levels)
 
-def read_moisture(gpio, pin, adc_channel, spi_channel):
+def read_moisture(gpio, pin, channel):
     def bitstring(n):
         s = bin(n)[2:]
-        return '0'*(8-len(s)) + s
+        return '0' * (8 - len(s)) + s
 
     gpio.write(pin, 1)
     sleep(.005)
 
-    cmd = 128
-    if adc_channel:
-        cmd += 32
-    with spidev.SpiDev(0, spi_channel) as conn:
-        conn.max_speed_hz = 1200000 # 1.2 MHz
+    cmd = 128 + (8 * channel)
+    with spidev.SpiDev(0, 0) as conn:
+        conn.max_speed_hz = 1200000
         reply_bytes = conn.xfer([cmd, 0])
 
     gpio.write(pin, 0)
@@ -67,7 +65,7 @@ if __name__ == '__main__':
 
     while True:
         for plant in plants:
-            moisture = read_moisture(gpio, plant.pin, *plant.channel)
+            moisture = read_moisture(gpio, plant.pin, plant.channel)
             plant.readings.append(moisture)
 
             ticks = ticks + 1
