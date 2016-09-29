@@ -13,12 +13,18 @@ import pigpio
 import spidev
 from flask import Flask
 
+gpio = pigpio.pi()
+
 window_length = 60
 reads_per_log = 60
 read_interval = 60
 
+def buffer(): return deque(maxlen=window_length)
 Plant = namedtuple("Plant", ("name", "pin", "channel", "readings"))
-plants = [Plant("palm bush", 21, 0, deque(maxlen=window_length))]
+plants = [Plant("avocado", 20, 0, buffer()),
+          Plant("dragonfruit", 21, 1, buffer()),
+          Plant("laymoona", 22, 2, buffer()),
+          Plant("vacant", 23, 3, buffer())]
 
 port = 54700
 app = Flask(__name__)
@@ -36,7 +42,12 @@ def water_levels():
     levels = dict((p.name, mean(p.readings)) for p in plants)
     return json.dumps(levels)
 
-def read_moisture(gpio, pin, channel):
+@app.route("/water_levels/live")
+def live_water_levels():
+    levels = dict((p.name, read_moisture(p.pin, p.channel)) for p in plants)
+    return json.dumps(levels)
+
+def read_moisture(pin, channel):
     def bitstring(n):
         s = bin(n)[2:]
         return '0' * (8 - len(s)) + s
@@ -52,7 +63,7 @@ def read_moisture(gpio, pin, channel):
     gpio.write(pin, 0)
 
     reply_bitstring = ''.join(bitstring(n) for n in reply_bytes)
-    reply = reply_bitstring[5:15]
+    reply = reply_bitstring[7:17]
     return int(reply, 2) / 2**10
 
 if __name__ == '__main__':
@@ -60,15 +71,14 @@ if __name__ == '__main__':
     log("* Starting up! *")
     log("****************")
     ticks = 0
-    gpio = pigpio.pi()
     Thread(target=lambda: app.run(host="0.0.0.0", port=port)).start()
 
     while True:
+        ticks = ticks + 1
         for plant in plants:
-            moisture = read_moisture(gpio, plant.pin, plant.channel)
+            moisture = read_moisture(plant.pin, plant.channel)
             plant.readings.append(moisture)
 
-            ticks = ticks + 1
             if ticks % reads_per_log == 0:
                 log("{}: {}".format(plant.name, mean(plant.readings)))
 
