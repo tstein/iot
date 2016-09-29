@@ -64,7 +64,8 @@ def read_moisture(pin, channel):
 
     reply_bitstring = ''.join(bitstring(n) for n in reply_bytes)
     reply = reply_bitstring[7:17]
-    return int(reply, 2) / 2**10
+    moisture = int(reply, 2) / 2**10
+    return round(moisture, 3)
 
 if __name__ == '__main__':
     log("****************")
