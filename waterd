@@ -37,9 +37,12 @@ def log(msg):
         line = "{} - {}\n".format(tstamp, msg)
         l.write(line)
 
+def avg(readings):
+    return round(mean(readings), 3)
+
 @app.route("/water_levels")
 def water_levels():
-    levels = dict((p.name, mean(p.readings)) for p in plants)
+    levels = dict((p.name, avg(p.readings)) for p in plants)
     return json.dumps(levels)
 
 @app.route("/water_levels/live")
@@ -81,6 +84,6 @@ if __name__ == '__main__':
             plant.readings.append(moisture)
 
             if ticks % reads_per_log == 0:
-                log("{}: {}".format(plant.name, mean(plant.readings)))
+                log("{}: {}".format(plant.name, avg(plant.readings)))
 
         sleep(read_interval)
