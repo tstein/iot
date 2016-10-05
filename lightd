@@ -7,7 +7,7 @@ import pigpio
 import sh
 
 
-human_hosts = ["texus5x", "rexus5x"]
+human_hosts = ["tphone", "rphone"]
 light_start = datetime.time(9, 00)
 light_end = datetime.time(17, 00)
 suppress_for = datetime.timedelta(hours=1)
