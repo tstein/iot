@@ -1,0 +1,12 @@
+[Unit]
+Description=plant thirst daemon
+
+[Service]
+User=ted
+ExecStart=/home/ted/code/science-daemons/waterd
+ExecStopPost=/usr/bin/gpio write 21 0
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

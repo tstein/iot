@@ -1,0 +1,10 @@
+[Unit]
+Description=GPIO daemon
+
+[Service]
+ExecStart=/usr/bin/pigpiod
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=air heat and wetness demon
+
+[Service]
+User=ted
+ExecStart=/home/ted/code/science-daemons/aird
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
