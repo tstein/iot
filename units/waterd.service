@@ -2,8 +2,8 @@
 Description=plant thirst daemon
 
 [Service]
-User=ted
-ExecStart=/home/ted/code/science-daemons/waterd
+User=science
+ExecStart=/home/science/code/science-daemons/waterd
 ExecStopPost=/usr/bin/gpio write 21 0
 KillMode=process
 Restart=on-failure
