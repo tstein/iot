@@ -3,15 +3,27 @@
 from __future__ import division
 
 import datetime
+import io
 import json
+import pickle
+import time
 from collections import deque, namedtuple
 from statistics import mean
 from threading import Thread
 from time import sleep
 
 import pigpio
-import spidev
-from flask import Flask
+import pytz
+from flask import Flask, send_file
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.dates import epoch2num, num2date, DateFormatter, MinuteLocator
+from matplotlib.figure import Figure
+
+import Adafruit_GPIO.SPI as SPI
+import Adafruit_MCP3008
+SPI_PORT   = 0
+SPI_DEVICE = 0
+mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE))
 
 gpio = pigpio.pi()
 
@@ -24,7 +36,7 @@ Plant = namedtuple("Plant", ("name", "pin", "channel", "readings"))
 plants = [Plant("avocado", 20, 0, buffer()),
           Plant("dragonfruit", 21, 1, buffer()),
           Plant("laymoona", 22, 2, buffer()),
-          Plant("vacant", 23, 3, buffer())]
+          Plant("palm bush", 23, 3, buffer())]
 
 port = 54700
 app = Flask(__name__)
@@ -38,7 +50,34 @@ def log(msg):
         l.write(line)
 
 def avg(readings):
-    return round(mean(readings), 3)
+    return round(mean([r[1] for r in readings]), 3)
+
+def read_moisture(pin, channel):
+    gpio.write(pin, 1)
+    sleep(.005)
+    val = mcp.read_adc(channel) / 1024.0
+    gpio.write(pin, 0)
+    return val
+
+def moisture_graph(plants):
+    figure = Figure()
+    ax = figure.add_subplot(111)
+    for plant in plants:
+        times, water_levels = zip(*plant.readings)
+        dates = num2date(epoch2num(times))
+        ax.plot_date(dates, water_levels, label=plant.name, fmt="-")
+    ax.set_ylim(bottom=0.0, top=1.0)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05),
+              ncol=4, fancybox=True, shadow=True)
+    ax.xaxis.set_major_locator(MinuteLocator(byminute=range(0, 60, 10)))
+    ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
+        tz=pytz.timezone("America/Los_Angeles")))
+
+    canvas = FigureCanvas(figure)
+    output = io.BytesIO()
+    canvas.print_png(output)
+    output.seek(0)
+    return output
 
 @app.route("/water_levels")
 def water_levels():
@@ -50,40 +89,34 @@ def live_water_levels():
     levels = dict((p.name, read_moisture(p.pin, p.channel)) for p in plants)
     return json.dumps(levels)
 
-def read_moisture(pin, channel):
-    def bitstring(n):
-        s = bin(n)[2:]
-        return '0' * (8 - len(s)) + s
+@app.route("/water_levels/graph")
+def water_levels_graph():
+    graph = moisture_graph(plants)
+    return send_file(graph, mimetype="image/png")
 
-    gpio.write(pin, 1)
-    sleep(.005)
+def monitor_water(plants):
+    ticks = 0
+    while True:
+        ticks = ticks + 1
+        for plant in plants:
+            moisture = read_moisture(plant.pin, plant.channel)
+            plant.readings.append((time.time(), moisture))
 
-    cmd = 128 + (8 * channel)
-    with spidev.SpiDev(0, 0) as conn:
-        conn.max_speed_hz = 1200000
-        reply_bytes = conn.xfer([cmd, 0])
+            if ticks % reads_per_log == 0:
+                log("{}: {}".format(plant.name, avg(plant.readings)))
 
-    gpio.write(pin, 0)
+        with open("/home/science/water.pickle", "wb") as f:
+            pickle.dump(plants, f)
 
-    reply_bitstring = ''.join(bitstring(n) for n in reply_bytes)
-    reply = reply_bitstring[7:17]
-    moisture = int(reply, 2) / 2**10
-    return round(moisture, 3)
+        sleep(read_interval)
 
 if __name__ == '__main__':
     log("****************")
     log("* Starting up! *")
     log("****************")
-    ticks = 0
-    Thread(target=lambda: app.run(host="0.0.0.0", port=port)).start()
 
-    while True:
-        ticks = ticks + 1
-        for plant in plants:
-            moisture = read_moisture(plant.pin, plant.channel)
-            plant.readings.append(moisture)
+    with open("/home/science/water.pickle", "rb") as f:
+        plants = pickle.load(f)
 
-            if ticks % reads_per_log == 0:
-                log("{}: {}".format(plant.name, avg(plant.readings)))
-
-        sleep(read_interval)
+    Thread(target=lambda: monitor_water(plants), daemon=True).start()
+    app.run(host="0.0.0.0", port=port, debug=True)
