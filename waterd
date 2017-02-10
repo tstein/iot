@@ -7,7 +7,7 @@ import io
 import json
 import pickle
 import time
-from collections import deque, namedtuple
+from collections import defaultdict, deque, namedtuple
 from statistics import mean
 from threading import Thread
 from time import sleep
@@ -27,16 +27,18 @@ mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE))
 
 gpio = pigpio.pi()
 
-window_length = 60
+window_length = 60 * 24 * 7
 reads_per_log = 60
 read_interval = 60
 
+Plant = namedtuple("Plant", ("name", "pin", "channel"))
+plants = [Plant("avocado", 20, 0),
+          Plant("dragonfruit", 21, 1),
+          Plant("laymoona", 22, 2),
+          Plant("palm bush", 23, 3)]
+
 def buffer(): return deque(maxlen=window_length)
-Plant = namedtuple("Plant", ("name", "pin", "channel", "readings"))
-plants = [Plant("avocado", 20, 0, buffer()),
-          Plant("dragonfruit", 21, 1, buffer()),
-          Plant("laymoona", 22, 2, buffer()),
-          Plant("palm bush", 23, 3, buffer())]
+readings = defaultdict(buffer)
 
 port = 54700
 app = Flask(__name__)
@@ -63,7 +65,7 @@ def moisture_graph(plants):
     figure = Figure()
     ax = figure.add_subplot(111)
     for plant in plants:
-        times, water_levels = zip(*plant.readings)
+        times, water_levels = zip(*readings[plant.name])
         dates = num2date(epoch2num(times))
         ax.plot_date(dates, water_levels, label=plant.name, fmt="-")
     ax.set_ylim(bottom=0.0, top=1.0)
@@ -89,7 +91,7 @@ def live_water_levels():
     levels = dict((p.name, read_moisture(p.pin, p.channel)) for p in plants)
     return json.dumps(levels)
 
-@app.route("/water_levels/graph")
+@app.route("/")
 def water_levels_graph():
     graph = moisture_graph(plants)
     return send_file(graph, mimetype="image/png")
@@ -100,13 +102,13 @@ def monitor_water(plants):
         ticks = ticks + 1
         for plant in plants:
             moisture = read_moisture(plant.pin, plant.channel)
-            plant.readings.append((time.time(), moisture))
+            readings[plant.name].append((time.time(), moisture))
 
             if ticks % reads_per_log == 0:
-                log("{}: {}".format(plant.name, avg(plant.readings)))
+                log("{}: {}".format(plant.name, avg(readings[plant.name])))
 
         with open("/home/science/water.pickle", "wb") as f:
-            pickle.dump(plants, f)
+            pickle.dump(readings, f)
 
         sleep(read_interval)
 
@@ -116,7 +118,9 @@ if __name__ == '__main__':
     log("****************")
 
     with open("/home/science/water.pickle", "rb") as f:
-        plants = pickle.load(f)
+        old_readings = pickle.load(f)
+        for name, rs in old_readings.items():
+            readings[name].extend(rs)
 
     Thread(target=lambda: monitor_water(plants), daemon=True).start()
     app.run(host="0.0.0.0", port=port, debug=True)
