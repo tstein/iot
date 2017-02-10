@@ -3,14 +3,26 @@
 from __future__ import division
 
 import datetime
+import io
 import json
+import pickle
 import time
+from collections import deque
 from threading import Thread
 
 import pigpio
-from flask import Flask
+import pytz
+from flask import Flask, send_file
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.dates import epoch2num, num2date, DateFormatter, MinuteLocator
+from matplotlib.figure import Figure
 
-log_interval = 30 * 60
+window_length = 60 * 24 * 7
+reads_per_log = 60
+read_interval = 60
+
+def buffer(): return deque(maxlen=window_length)
+readings = buffer()
 
 gpio = pigpio.pi()
 port = 1316     # 1000 + sum(map(ord, "air"))
@@ -41,6 +53,53 @@ def read_air():
     gpio.i2c_close(i2c)
     return round(rh, 1), round(temp_c, 1)
 
+def monitor_air():
+    ticks = 0
+    while True:
+        ticks = ticks + 1
+        rh, temp_c = read_air()
+        readings.append((time.time(), rh, temp_c))
+
+        if ticks % reads_per_log == 0:
+            log("temperature: {} C, relative humidity: {}%".format(temp_c, rh))
+
+        with open("/home/science/air.pickle", "wb") as f:
+            pickle.dump(readings, f)
+
+        time.sleep(read_interval)
+
+@app.route("/history.png")
+def history_png():
+    figure = Figure()
+    times, rhs, temps = zip(*readings)
+    dates = num2date(epoch2num(times))
+
+    rh_ax = figure.add_subplot(111)
+    rh_ax.plot_date(dates, rhs, label="humidity (%)", fmt="b-")
+    rh_ax.set_ylabel("relative humidity (%)", color="b")
+    rh_ax.set_ylim(bottom=0, top=100)
+    rh_handles, rh_labels = rh_ax.get_legend_handles_labels()
+
+    temp_ax = rh_ax.twinx()
+    temp_ax.plot_date(dates, temps, label="temperature (C)", fmt="r-")
+    temp_ax.set_ylabel("temperature (°C)", color="r")
+    temp_ax.set_ylim(bottom=10, top=30)
+    temp_handles, temp_labels = temp_ax.get_legend_handles_labels()
+
+    temp_ax.legend(temp_handles + rh_handles, temp_labels + rh_labels,
+            loc='upper center', bbox_to_anchor=(0.5, 1.05),
+            ncol=4, fancybox=True, shadow=True)
+    temp_ax.xaxis.set_major_locator(MinuteLocator(byminute=range(0, 60, 10)))
+    temp_ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
+        tz=pytz.timezone("America/Los_Angeles")))
+
+    canvas = FigureCanvas(figure)
+    output = io.BytesIO()
+    canvas.print_png(output)
+    output.seek(0)
+    return send_file(output, mimetype="image/png")
+
+
 @app.route("/")
 def air():
     rh, temp_c = read_air()
@@ -54,8 +113,13 @@ if __name__ == '__main__':
     log("****************")
     log("* Starting up! *")
     log("****************")
-    Thread(target=lambda: app.run(host="0.0.0.0", port=port)).start()
+
+    with open("/home/science/air.pickle", "rb") as f:
+        old_readings = pickle.load(f)
+        readings.extend(old_readings)
+
+    Thread(target=monitor_air, daemon=True).start()
+    app.run(host="0.0.0.0", port=port, debug=True)
     while True:
         rh, temp_c = read_air()
         log("temperature: {} C, relative humidity: {}%".format(temp_c, rh))
-        time.sleep(log_interval)
