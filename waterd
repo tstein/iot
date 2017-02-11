@@ -16,7 +16,7 @@ import pigpio
 import pytz
 from flask import Flask, send_file
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.dates import epoch2num, num2date, DateFormatter, MinuteLocator
+from matplotlib.dates import epoch2num, num2date, DateFormatter, HourLocator
 from matplotlib.figure import Figure
 
 import Adafruit_GPIO.SPI as SPI
@@ -71,7 +71,7 @@ def moisture_graph(plants):
     ax.set_ylim(bottom=0.0, top=1.0)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05),
               ncol=4, fancybox=True, shadow=True)
-    ax.xaxis.set_major_locator(MinuteLocator(byminute=range(0, 60, 10)))
+    ax.xaxis.set_major_locator(HourLocator(byhour=range(0, 24, 8)))
     ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
         tz=pytz.timezone("America/Los_Angeles")))
 

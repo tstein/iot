@@ -14,7 +14,7 @@ import pigpio
 import pytz
 from flask import Flask, send_file
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.dates import epoch2num, num2date, DateFormatter, MinuteLocator
+from matplotlib.dates import epoch2num, num2date, DateFormatter, HourLocator
 from matplotlib.figure import Figure
 
 window_length = 60 * 24 * 7
@@ -70,9 +70,14 @@ def monitor_air():
 
 @app.route("/history.png")
 def history_png():
+    def c_to_f(c):
+        return (c * 9 / 5) + 32
+
     figure = Figure()
-    times, rhs, temps = zip(*readings)
+    figure.suptitle("downstairs air")
+    times, rhs, temps_c = zip(*readings)
     dates = num2date(epoch2num(times))
+    temps_f = [c_to_f(c) for c in temps_c]
 
     rh_ax = figure.add_subplot(111)
     rh_ax.plot_date(dates, rhs, label="humidity (%)", fmt="b-")
@@ -81,15 +86,15 @@ def history_png():
     rh_handles, rh_labels = rh_ax.get_legend_handles_labels()
 
     temp_ax = rh_ax.twinx()
-    temp_ax.plot_date(dates, temps, label="temperature (C)", fmt="r-")
-    temp_ax.set_ylabel("temperature (°C)", color="r")
-    temp_ax.set_ylim(bottom=10, top=30)
+    temp_ax.plot_date(dates, temps_f, label="temperature (°F)", fmt="r-")
+    temp_ax.set_ylabel("temperature (°F)", color="r")
+    temp_ax.set_ylim(bottom=40, top=80)
     temp_handles, temp_labels = temp_ax.get_legend_handles_labels()
 
     temp_ax.legend(temp_handles + rh_handles, temp_labels + rh_labels,
             loc='upper center', bbox_to_anchor=(0.5, 1.05),
             ncol=4, fancybox=True, shadow=True)
-    temp_ax.xaxis.set_major_locator(MinuteLocator(byminute=range(0, 60, 10)))
+    temp_ax.xaxis.set_major_locator(HourLocator(byhour=range(0, 24, 8)))
     temp_ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
         tz=pytz.timezone("America/Los_Angeles")))
 
