@@ -5,6 +5,7 @@ from __future__ import division
 import datetime
 import io
 import json
+import math
 import pickle
 import time
 from collections import deque
@@ -14,7 +15,7 @@ import pigpio
 import pytz
 from flask import Flask, send_file
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.dates import epoch2num, num2date, DateFormatter, HourLocator
+from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
 from matplotlib.figure import Figure
 
 window_length = 60 * 24 * 7
@@ -73,11 +74,18 @@ def history_png():
     def c_to_f(c):
         return (c * 9 / 5) + 32
 
+    def dew_point(t, rh):
+        b, c = 17.368, 238.88
+        gamma = math.log(rh / 100) + ((b * t) / (c + t))
+        dp = ((c * gamma) / (b - gamma))
+        return dp
+
     figure = Figure()
     figure.suptitle("downstairs air")
     times, rhs, temps_c = zip(*readings)
     dates = num2date(epoch2num(times))
     temps_f = [c_to_f(c) for c in temps_c]
+    dew_points = [c_to_f(dew_point(t, rh)) for _, rh, t in readings]
 
     rh_ax = figure.add_subplot(111)
     rh_ax.plot_date(dates, rhs, label="humidity (%)", fmt="b-")
@@ -87,14 +95,16 @@ def history_png():
 
     temp_ax = rh_ax.twinx()
     temp_ax.plot_date(dates, temps_f, label="temperature (°F)", fmt="r-")
+    temp_ax.plot_date(dates, dew_points, label="dew point(°F)", fmt="g-")
     temp_ax.set_ylabel("temperature (°F)", color="r")
-    temp_ax.set_ylim(bottom=40, top=80)
+    temp_ax.set_ylim(bottom=30, top=80)
     temp_handles, temp_labels = temp_ax.get_legend_handles_labels()
 
     temp_ax.legend(temp_handles + rh_handles, temp_labels + rh_labels,
             loc='upper center', bbox_to_anchor=(0.5, 1.05),
             ncol=4, fancybox=True, shadow=True)
-    temp_ax.xaxis.set_major_locator(HourLocator(byhour=range(0, 24, 8)))
+    temp_ax.xaxis.set_major_locator(DayLocator(
+        tz=pytz.timezone("America/Los_Angeles")))
     temp_ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
         tz=pytz.timezone("America/Los_Angeles")))
 
