@@ -16,7 +16,7 @@ import pigpio
 import pytz
 from flask import Flask, send_file
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.dates import epoch2num, num2date, DateFormatter, HourLocator
+from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
 from matplotlib.figure import Figure
 
 import Adafruit_GPIO.SPI as SPI
@@ -27,9 +27,9 @@ mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE))
 
 gpio = pigpio.pi()
 
-window_length = 60 * 24 * 7
-reads_per_log = 60
-read_interval = 60
+read_interval = 60 * 10
+window_length = 6 * 24 * 7
+reads_per_log = 6
 
 Plant = namedtuple("Plant", ("name", "pin", "channel"))
 plants = [Plant("avocado", 20, 0),
@@ -71,9 +71,11 @@ def moisture_graph(plants):
     ax.set_ylim(bottom=0.0, top=1.0)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05),
               ncol=4, fancybox=True, shadow=True)
-    ax.xaxis.set_major_locator(HourLocator(byhour=range(0, 24, 8)))
+    ax.xaxis.set_major_locator(DayLocator(
+        tz=pytz.timezone("America/Los_Angeles")))
     ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
         tz=pytz.timezone("America/Los_Angeles")))
+    ax.yaxis.tick_right()
 
     canvas = FigureCanvas(figure)
     output = io.BytesIO()
@@ -102,6 +104,7 @@ def monitor_water(plants):
         ticks = ticks + 1
         for plant in plants:
             moisture = read_moisture(plant.pin, plant.channel)
+            if moisture == 0.0: continue
             readings[plant.name].append((time.time(), moisture))
 
             if ticks % reads_per_log == 0:
