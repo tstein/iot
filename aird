@@ -105,7 +105,7 @@ def history_png():
             ncol=4, fancybox=True, shadow=True)
     temp_ax.xaxis.set_major_locator(DayLocator(
         tz=pytz.timezone("America/Los_Angeles")))
-    temp_ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
+    temp_ax.xaxis.set_major_formatter(DateFormatter('%m/%d',
         tz=pytz.timezone("America/Los_Angeles")))
 
     canvas = FigureCanvas(figure)

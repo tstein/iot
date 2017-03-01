@@ -73,7 +73,7 @@ def moisture_graph(plants):
               ncol=4, fancybox=True, shadow=True)
     ax.xaxis.set_major_locator(DayLocator(
         tz=pytz.timezone("America/Los_Angeles")))
-    ax.xaxis.set_major_formatter(DateFormatter('%H:%M',
+    ax.xaxis.set_major_formatter(DateFormatter('%m/%d',
         tz=pytz.timezone("America/Los_Angeles")))
     ax.yaxis.tick_right()
 
