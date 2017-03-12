@@ -1,0 +1,16 @@
+body {
+  background: linear-gradient(to bottom right, #329afc,#1973c6);
+  height: 100%;
+}
+
+#content {
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+img {
+  display: block;
+}

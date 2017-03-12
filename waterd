@@ -12,36 +12,43 @@ from statistics import mean
 from threading import Thread
 from time import sleep
 
+import Adafruit_GPIO.SPI as SPI
+import Adafruit_MCP3008
 import pigpio
 import pytz
-from flask import Flask, send_file
+from flask import Flask, render_template, send_file
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
 from matplotlib.figure import Figure
 
-import Adafruit_GPIO.SPI as SPI
-import Adafruit_MCP3008
-SPI_PORT   = 0
-SPI_DEVICE = 0
-mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE))
 
-gpio = pigpio.pi()
+# plant config
+Plant = namedtuple("Plant", ("name", "pin", "channel", "threshold"))
+plants = [Plant("avocado",      20, 0, .45),
+          Plant("dragonfruit",  21, 1, .70),
+          Plant("laymoona",     22, 2, .70),
+          Plant("palm bush",    23, 3, .70)]
 
-read_interval = 60 * 10
-window_length = 6 * 24 * 7
-reads_per_log = 6
+# moisture reading config
+read_interval = 60 * 10     # every ten minutes
+window_length = 6 * 24 * 7  # one week
+reads_per_log = 6           # one hour
+def moisture_buffer(): return deque(maxlen=window_length)
+readings = defaultdict(moisture_buffer)
 
-Plant = namedtuple("Plant", ("name", "pin", "channel"))
-plants = [Plant("avocado", 20, 0),
-          Plant("dragonfruit", 21, 1),
-          Plant("laymoona", 22, 2),
-          Plant("palm bush", 23, 3)]
+# watering config
+minimum_water_interval = 60 * 60 * 24 * 3   # three days
+def watering_buffer(): return deque(maxlen=100)
+waterings = defaultdict(watering_buffer)
 
-def buffer(): return deque(maxlen=window_length)
-readings = defaultdict(buffer)
-
+# web config
 port = 54700
+
+
+# important objects
 app = Flask(__name__)
+gpio = pigpio.pi()
+mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(0, 0))
 
 
 def log(msg):
@@ -83,22 +90,8 @@ def moisture_graph(plants):
     output.seek(0)
     return output
 
-@app.route("/water_levels")
-def water_levels():
-    levels = dict((p.name, avg(p.readings)) for p in plants)
-    return json.dumps(levels)
-
-@app.route("/water_levels/live")
-def live_water_levels():
-    levels = dict((p.name, read_moisture(p.pin, p.channel)) for p in plants)
-    return json.dumps(levels)
-
-@app.route("/")
-def water_levels_graph():
-    graph = moisture_graph(plants)
-    return send_file(graph, mimetype="image/png")
-
 def monitor_water(plants):
+    """ Thread target to periodically measure moisture levels. """
     ticks = 0
     while True:
         ticks = ticks + 1
@@ -110,20 +103,62 @@ def monitor_water(plants):
             if ticks % reads_per_log == 0:
                 log("{}: {}".format(plant.name, avg(readings[plant.name])))
 
-        with open("/home/science/water.pickle", "wb") as f:
-            pickle.dump(readings, f)
-
+            if moisture < plant.threshold:
+                if waterings[plant.name]:
+                    time_since_water = waterings[plant.name][-1] - time.time()
+                else:
+                    time_since_water = 999999999
+                if time_since_water > minimum_water_interval:
+                    water_plant(plant)
+        save_state()
         sleep(read_interval)
+
+def water_plant(plant):
+    log("watering {}".format(plant.name))
+    waterings[plant.name].append(time.time())
+
+def save_state():
+    state = {'readings': readings,
+             'waterings': waterings}
+    with open("/home/science/water.pickle", "wb") as f:
+        pickle.dump(state, f)
+
+def load_state():
+    with open("/home/science/water.pickle", "rb") as f:
+        state = pickle.load(f)
+        if 'readings' in state:
+            old_readings = state['readings']
+            for name, rs in old_readings.items():
+                readings[name].extend(rs)
+        if 'waterings' in state:
+            old_waterings = state['waterings']
+            for name, ws in old_waterings.items():
+                waterings[name].extend(ws)
+
+@app.route("/water_levels")
+def water_levels():
+    levels = dict((p.name, avg(p.readings)) for p in plants)
+    return json.dumps(levels)
+
+@app.route("/water_levels/live")
+def live_water_levels():
+    levels = dict((p.name, read_moisture(p.pin, p.channel)) for p in plants)
+    return json.dumps(levels)
+
+@app.route("/water_levels/graph")
+def water_levels_graph():
+    graph = moisture_graph(plants)
+    return send_file(graph, mimetype="image/png")
+
+@app.route("/")
+def index():
+    return render_template("water.html")
 
 if __name__ == '__main__':
     log("****************")
     log("* Starting up! *")
     log("****************")
 
-    with open("/home/science/water.pickle", "rb") as f:
-        old_readings = pickle.load(f)
-        for name, rs in old_readings.items():
-            readings[name].extend(rs)
-
+    load_state()
     Thread(target=lambda: monitor_water(plants), daemon=True).start()
     app.run(host="0.0.0.0", port=port, debug=True)
