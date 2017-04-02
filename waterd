@@ -24,10 +24,10 @@ from matplotlib.figure import Figure
 
 # plant config
 Plant = namedtuple("Plant", ("name", "pin", "channel", "threshold"))
-plants = [Plant("avocado",      20, 0, .45),
-          Plant("dragonfruit",  21, 1, .70),
-          Plant("laymoona",     22, 2, .70),
-          Plant("palm bush",    23, 3, .70)]
+plants = [Plant(          "avocado",  20,    0,         .45),
+          Plant(      "dragonfruit",  21,    1,         .55),
+          Plant(         "laymoona",  22,    2,         .55),
+          Plant(        "palm bush",  23,    3,         .55)]
 
 # moisture reading config
 read_interval = 60 * 10     # every ten minutes
@@ -94,7 +94,6 @@ def monitor_water(plants):
     """ Thread target to periodically measure moisture levels. """
     ticks = 0
     while True:
-        ticks = ticks + 1
         for plant in plants:
             moisture = read_moisture(plant.pin, plant.channel)
             if moisture == 0.0: continue
@@ -104,12 +103,11 @@ def monitor_water(plants):
                 log("{}: {}".format(plant.name, avg(readings[plant.name])))
 
             if moisture < plant.threshold:
-                if waterings[plant.name]:
-                    time_since_water = waterings[plant.name][-1] - time.time()
-                else:
-                    time_since_water = 999999999
+                last_watering = waterings[plant.name][-1]
+                time_since_water = time.time() - last_watering
                 if time_since_water > minimum_water_interval:
                     water_plant(plant)
+        ticks = ticks + 1
         save_state()
         sleep(read_interval)
 
@@ -161,4 +159,4 @@ if __name__ == '__main__':
 
     load_state()
     Thread(target=lambda: monitor_water(plants), daemon=True).start()
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port)
