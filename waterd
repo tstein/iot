@@ -6,6 +6,7 @@ import datetime
 import io
 import json
 import pickle
+import socket
 import time
 from collections import defaultdict, deque, namedtuple
 from statistics import mean
@@ -14,6 +15,7 @@ from time import sleep
 
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_MCP3008
+import paho.mqtt.client
 import pigpio
 import pytz
 from flask import Flask, render_template, send_file
@@ -49,6 +51,7 @@ port = 54700
 app = Flask(__name__)
 gpio = pigpio.pi()
 mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(0, 0))
+mqttc = paho.mqtt.client.Client(socket.gethostname())
 
 
 def log(msg):
@@ -95,9 +98,10 @@ def monitor_water(plants):
     ticks = 0
     while True:
         for plant in plants:
-            moisture = read_moisture(plant.pin, plant.channel)
+            moisture = round(read_moisture(plant.pin, plant.channel), 3)
             if moisture == 0.0: continue
             readings[plant.name].append((time.time(), moisture))
+            mqttc.publish("plants/" + plant.name + "/moisture", moisture)
 
             if ticks % reads_per_log == 0:
                 log("{}: {}".format(plant.name, avg(readings[plant.name])))
@@ -158,5 +162,8 @@ if __name__ == '__main__':
     log("****************")
 
     load_state()
+
+    mqttc.connect('bill')
+    mqttc.loop_start()
     Thread(target=lambda: monitor_water(plants), daemon=True).start()
     app.run(host="0.0.0.0", port=port)
