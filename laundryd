@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+
+import datetime
+import os
+import time
+from collections import deque
+from itertools import islice
+from os.path import expanduser
+
+import pigpio
+
+from lib import config, mqtt
+
+gpio = pigpio.pi()
+
+I2C_BUS = 1
+
+# photometer
+ISL29125_I2C = 0x44
+ISL29125_CONF1 = 0x01
+ISL29125_CONF1_RGB = 0b101
+ISL29125_GREEN_LOW = 0x09
+ISL29125_GREEN_HIGH = 0x0A
+ISL29125_RED_LOW = 0x0B
+ISL29125_RED_HIGH = 0x0C
+ISL29125_BLUE_LOW = 0x0D
+ISL29125_BLUE_HIGH = 0x0E
+
+# accelerometer
+LIS331_I2C = 0x19
+LIS331_CTRL_REG1 = 0x20
+LIS331_CTRL_REG1_NORMAL_POWER = 0b100000
+LIS331_CTRL_REG1_XYZ = 0b111
+LIS331_X_L = 0x28
+LIS331_X_H = 0x29
+LIS331_Y_L = 0x2A
+LIS331_Y_H = 0x2B
+LIS331_Z_L = 0x2C
+LIS331_Z_H = 0x2D
+
+window_length = 60 * 60
+def buffer(): return deque(maxlen=window_length)
+washer_red_readings = buffer()
+dryer_accel_readings = buffer()
+washer_state = "idle"
+dryer_state = "idle"
+
+def i2c_write(dev, register, val):
+    gpio.i2c_write_byte_data(dev, register, val)
+
+def i2c_read(dev, register):
+    gpio.i2c_write_device(dev, [register])
+    time.sleep(0.01)
+    _, vals = gpio.i2c_read_device(dev, 1)
+    return vals[0]
+
+def init_washer_light(dev):
+    i2c_write(dev, ISL29125_CONF1, ISL29125_CONF1_RGB)
+
+def init_dryer_accel(dev):
+    reg1 = (LIS331_CTRL_REG1_NORMAL_POWER
+          | LIS331_CTRL_REG1_XYZ)
+    i2c_write(dev, LIS331_CTRL_REG1, reg1)
+
+def read_washer_light_red(dev):
+    # Red gets a strong reading when the washer is done, a weak one for the
+    # rest of the cycle, and almost nothing when idle. Don't need the low byte
+    # to distinguish those states.
+    return i2c_read(dev, ISL29125_RED_HIGH)
+
+def read_washer_light_green(dev):
+    return i2c_read(dev, ISL29125_GREEN_LOW)
+
+def read_dryer_accel(dev):
+    # With the sensor configured as this program does, the dryer produces
+    # maxed-out high bytes on a particular axis on most readings while running.
+    # Return the sum of the high bytes of all axes to make this code agnostic
+    # to the way the sensor is mounted.
+    #
+    # Additionally, the sensor returns a maxed-out high byte in the expected
+    # axis with some probability while the dryer is idle. For some reason, this
+    # probability is significantly lower if you actually read the low bytes, so
+    # we read them and throw them away.
+    i2c_read(dev, LIS331_X_L)
+    x_high = i2c_read(dev, LIS331_X_H)
+    i2c_read(dev, LIS331_Y_L)
+    y_high = i2c_read(dev, LIS331_Y_H)
+    i2c_read(dev, LIS331_Z_L)
+    z_high = i2c_read(dev, LIS331_Z_H)
+    return x_high + y_high + z_high
+
+def update_washer_state():
+    global washer_state
+    if not washer_red_readings: return
+
+    red = washer_red_readings[-1]
+    if red < 2:
+        washer_state = "idle"
+    elif 2 <= red < 6:
+        washer_state = "washing"
+    else:
+        if washer_state != "done":
+            notify(os.environ['TED_PHONE_GW'], "washer", "done")
+        washer_state = "done"
+
+def update_dryer_state():
+    global dryer_state
+    if len(dryer_accel_readings) < 60: return
+
+    rs = len(dryer_accel_readings)
+    accel_sum = sum(islice(dryer_accel_readings, rs - 60, rs))
+    if 0 <= accel_sum < 4000:
+        if dryer_state != "idle":
+            notify(os.environ['TED_PHONE_GW'], "dryer", "done")
+        dryer_state = "idle"
+    else:
+        dryer_state = "drying"
+
+def notify(whom, subject, body):
+    os.system("echo {} | mail -r laundry@tedstein.net -s {} {}".format(
+        body, subject, whom))
+
+def main():
+    try:
+        trace = open(expanduser("~/last_wash.csv"), "w")
+        washer_light_i2c = gpio.i2c_open(I2C_BUS, ISL29125_I2C)
+        dryer_accel_i2c = gpio.i2c_open(I2C_BUS, LIS331_I2C)
+
+        mqtt.start_client(config.service_name())
+        mqtt.publish_forever("laundry/washer", lambda: washer_state)
+        mqtt.publish_forever("laundry/dryer", lambda: dryer_state)
+
+        while True:
+            washer_red = read_washer_light_red(washer_light_i2c)
+            washer_green = read_washer_light_green(washer_light_i2c)
+            dryer_accel = read_dryer_accel(dryer_accel_i2c)
+
+            washer_red_readings.append(washer_red)
+            dryer_accel_readings.append(dryer_accel)
+
+            update_washer_state()
+            update_dryer_state()
+
+            line = ",".join(map(str, [time.time(), washer_red, washer_green, dryer_accel]))
+            trace.write(line + "\n")
+            time.sleep(1)
+    finally:
+        trace.close()
+        gpio.i2c_close(washer_light_i2c)
+        gpio.i2c_close(dryer_accel_i2c)
+
+if __name__ == "__main__":
+    main()
