@@ -9,6 +9,7 @@ import math
 import pickle
 import time
 from collections import deque
+from os.path import expanduser
 from threading import Thread
 
 import pigpio
@@ -19,17 +20,22 @@ from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
 from matplotlib.figure import Figure
 
 import lib.mqtt as mqtt
+import lib.config as config
 
+service_name = __file__.split("/")[-1]
 window_length = 60 * 24 * 7
 reads_per_log = 60
 read_interval = 60
+pickle_path = expanduser("~/air.pickle")
+location = config.byhostname(
+    "unknown location",
+    kontos="downstairs",
+    sarissa="upstairs")
 
 def buffer(): return deque(maxlen=window_length)
 readings = buffer()
 
-service_name = __file__.split("/")[-1]
 gpio = pigpio.pi()
-port = 1316     # 1000 + sum(map(ord, "air"))
 app = Flask(service_name)
 
 def log(msg):
@@ -70,23 +76,23 @@ def monitor_air():
         if ticks % reads_per_log == 0:
             log("temperature: {} C, relative humidity: {}%".format(temp_c, rh))
 
-        with open("/home/science/air.pickle", "wb") as f:
+        with open(pickle_path, "wb") as f:
             pickle.dump(readings, f)
 
         time.sleep(read_interval)
 
 def publish_temp():
     if not readings: return None
-    return readings[-1][2]
+    return round(readings[-1][2])
 
 def publish_temp_f():
     c = publish_temp()
     if c is None: return None
-    return c_to_f(c)
+    return round(c_to_f(c))
 
 def publish_rh():
     if not readings: return None
-    return readings[-1][1]
+    return round(readings[-1][1])
 
 @app.route("/history.png")
 def history_png():
@@ -97,7 +103,7 @@ def history_png():
         return dp
 
     figure = Figure()
-    figure.suptitle("downstairs air")
+    figure.suptitle(location + " air")
     times, rhs, temps_c = zip(*readings)
     dates = num2date(epoch2num(times))
     temps_f = [c_to_f(c) for c in temps_c]
@@ -145,13 +151,13 @@ if __name__ == '__main__':
     log("* Starting up! *")
     log("****************")
 
-    with open("/home/science/air.pickle", "rb") as f:
+    with open(pickle_path, "rb") as f:
         old_readings = pickle.load(f)
         readings.extend(old_readings)
 
     Thread(target=monitor_air, daemon=True).start()
     mqtt.start_client(service_name)
-    mqtt.publish_forever("ambient/temperature/downstairs", publish_temp)
-    mqtt.publish_forever("ambient/temperature_f/downstairs", publish_temp_f)
-    mqtt.publish_forever("ambient/humidity/downstairs", publish_rh)
-    app.run(host="0.0.0.0", port=port)
+    mqtt.publish_forever("ambient/temperature/" + location, publish_temp)
+    mqtt.publish_forever("ambient/temperature_f/" + location, publish_temp_f)
+    mqtt.publish_forever("ambient/humidity/" + location, publish_rh)
+    app.run(host="0.0.0.0", port=1316)  # 1000 + sum(map(ord, "air"))
