@@ -105,7 +105,10 @@ def monitor_water(plants):
             moisture = round(read_moisture(plant.pin, plant.channel), 3)
             if moisture == 0.0: continue
             readings[plant.name].append((time.time(), moisture))
-            mqttc.publish("plants/" + plant.name + "/moisture", moisture)
+            mqttc.publish(
+                "plants/" + plant.name + "/moisture",
+                moisture,
+                retain=True)
 
             if ticks % reads_per_log == 0:
                 log("{}: {}".format(plant.name, avg(readings[plant.name])))
