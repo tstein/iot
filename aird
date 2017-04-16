@@ -18,6 +18,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
 from matplotlib.figure import Figure
 
+import lib.mqtt as mqtt
+
 window_length = 60 * 24 * 7
 reads_per_log = 60
 read_interval = 60
@@ -25,9 +27,10 @@ read_interval = 60
 def buffer(): return deque(maxlen=window_length)
 readings = buffer()
 
+service_name = __file__.split("/")[-1]
 gpio = pigpio.pi()
 port = 1316     # 1000 + sum(map(ord, "air"))
-app = Flask(__name__)
+app = Flask(service_name)
 
 def log(msg):
     log_file = "/var/log/air.log"
@@ -35,6 +38,9 @@ def log(msg):
     with open(log_file, 'a') as l:
         line = "{} - {}\n".format(tstamp, msg)
         l.write(line)
+
+def c_to_f(c):
+    return (c * 9 / 5) + 32
 
 def read_air():
     i2c = gpio.i2c_open(1, 0x40)
@@ -69,11 +75,21 @@ def monitor_air():
 
         time.sleep(read_interval)
 
+def publish_temp():
+    if not readings: return None
+    return readings[-1][2]
+
+def publish_temp_f():
+    c = publish_temp()
+    if c is None: return None
+    return c_to_f(c)
+
+def publish_rh():
+    if not readings: return None
+    return readings[-1][1]
+
 @app.route("/history.png")
 def history_png():
-    def c_to_f(c):
-        return (c * 9 / 5) + 32
-
     def dew_point(t, rh):
         b, c = 17.368, 238.88
         gamma = math.log(rh / 100) + ((b * t) / (c + t))
@@ -134,7 +150,8 @@ if __name__ == '__main__':
         readings.extend(old_readings)
 
     Thread(target=monitor_air, daemon=True).start()
+    mqtt.start_client(service_name)
+    mqtt.publish_forever("ambient/temperature/downstairs", publish_temp)
+    mqtt.publish_forever("ambient/temperature_f/downstairs", publish_temp_f)
+    mqtt.publish_forever("ambient/humidity/downstairs", publish_rh)
     app.run(host="0.0.0.0", port=port)
-    while True:
-        rh, temp_c = read_air()
-        log("temperature: {} C, relative humidity: {}%".format(temp_c, rh))
