@@ -109,7 +109,7 @@ def update_dryer_state():
 
     rs = len(dryer_accel_readings)
     accel_sum = sum(islice(dryer_accel_readings, rs - 60, rs))
-    if 0 <= accel_sum < 4000:
+    if 0 <= accel_sum < 3000:
         if dryer_state != "idle":
             notify(os.environ['TED_PHONE_GW'], "dryer", "done")
         dryer_state = "idle"
