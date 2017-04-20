@@ -126,6 +126,9 @@ def main():
         washer_light_i2c = gpio.i2c_open(I2C_BUS, ISL29125_I2C)
         dryer_accel_i2c = gpio.i2c_open(I2C_BUS, LIS331_I2C)
 
+        init_washer_light(washer_light_i2c)
+        init_dryer_accel(dryer_accel_i2c)
+
         mqtt.start_client(config.service_name())
         mqtt.publish_forever("laundry/washer", lambda: washer_state)
         mqtt.publish_forever("laundry/dryer", lambda: dryer_state)
@@ -143,6 +146,7 @@ def main():
 
             line = ",".join(map(str, [time.time(), washer_red, washer_green, dryer_accel]))
             trace.write(line + "\n")
+            trace.flush()
             time.sleep(1)
     finally:
         trace.close()
