@@ -1,9 +1,9 @@
 [Unit]
-Description=air heat and wetness daemon
+Description=laundry daemon
 
 [Service]
 User=science
-ExecStart=/home/science/code/science-daemons/aird
+ExecStart=/home/science/code/science-daemons/laundryd
 KillMode=process
 Restart=on-failure
 
