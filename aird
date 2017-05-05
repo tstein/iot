@@ -69,7 +69,6 @@ def read_air():
 def monitor_air():
     ticks = 0
     while True:
-        ticks = ticks + 1
         rh, temp_c = read_air()
         readings.append((time.time(), rh, temp_c))
 
@@ -79,6 +78,7 @@ def monitor_air():
         with open(pickle_path, "wb") as f:
             pickle.dump(readings, f)
 
+        ticks = ticks + 1
         time.sleep(read_interval)
 
 def publish_temp():

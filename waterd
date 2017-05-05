@@ -27,10 +27,16 @@ from matplotlib.figure import Figure
 
 # plant config
 Plant = namedtuple("Plant", ("name", "pin", "channel", "line", "threshold"))
-plants = [Plant(          "avocado",  20,    0,         11,     .45),
-          Plant(      "dragonfruit",  21,    1,         12,     .00),
-          Plant(         "laymoona",  22,    2,         13,     .00),
-          Plant(        "palm bush",  23,    3,         14,     .00)]
+plants = [
+          Plant(          "avocado",  21,    0,         11,     .45),
+          Plant(      "dragonfruit",  20,    1,         12,     .00),
+          Plant(         "laymoona",  16,    2,         13,     .00),
+          Plant(        "palm bush",  12,    3,         14,     .00),
+          #Plant(          "empty 4",  25,    4,        127,     .00),
+          #Plant(          "empty 5",  24,    5,        127,     .00),
+          #Plant(          "empty 6",  23,    6,        127,     .00),
+          #Plant(          "empty 7",  18,    7,        127,     .00),
+]
 
 # moisture reading config
 read_interval = 60 * 10       # every ten minutes
