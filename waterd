@@ -24,6 +24,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
 from matplotlib.figure import Figure
 
+import lib.mqtt
+
 
 # plant config
 Plant = namedtuple("Plant", ("name", "pin", "channel", "line", "threshold"))
@@ -182,7 +184,7 @@ if __name__ == '__main__':
 
     load_state()
 
-    mqttc.connect('bill')
+    mqttc.connect(lib.mqtt.server)
     mqttc.loop_start()
     Thread(target=lambda: monitor_water(plants), daemon=True).start()
     app.run(host="0.0.0.0", port=port)

@@ -4,8 +4,9 @@ from threading import Thread
 
 import paho.mqtt.client
 
-_SERVER = 'bill'
 _PUBLISH_CALLBACKS = {}
+
+server = 'bill'
 
 def start_client(service_name):
     def publisher(mqttc):
@@ -20,7 +21,7 @@ def start_client(service_name):
 
     client_name = "{}-{}".format(socket.gethostname(), service_name)
     mqttc = paho.mqtt.client.Client(client_name)
-    mqttc.connect(_SERVER)
+    mqttc.connect(server)
     mqttc.loop_start()
     Thread(target=publisher(mqttc), daemon=True).start()
 
