@@ -108,7 +108,7 @@ def update_dryer_state():
 
     rs = len(dryer_accel_readings)
     accel_sum = sum(islice(dryer_accel_readings, rs - 60, rs))
-    if 0 <= accel_sum < 3000:
+    if 0 <= accel_sum < 3500:
         if dryer_state != "idle":
             mqtt.tell("ted", "dryer is done")
         dryer_state = "idle"
