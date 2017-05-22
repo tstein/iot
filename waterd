@@ -132,6 +132,7 @@ def monitor_water(plants):
                     if time_since_water > minimum_water_interval:
                         water_plant(plant)
         ticks = ticks + 1
+        prune_state()
         save_state()
         sleep(read_interval)
 
@@ -140,6 +141,19 @@ def water_plant(plant):
     waterings[plant.name].append(time.time())
     requests.get(water_url.format(plant.line))
     lib.mqtt.tell("ted", "watered " + plant.name, mqttc)
+
+def prune_state():
+    stale_before = time.time() - (read_interval * window_length)
+    plants_to_delete = []
+    for plant_name, rs in readings.items():
+        while rs and rs[0][0] < stale_before:
+            rs.popleft()
+        if not rs:
+            plants_to_delete.append(plant_name)
+
+    for plant_name in plants_to_delete:
+        log("deleting {} due to lack of fresh data".format(plant_name))
+        del(readings[plant_name])
 
 def save_state():
     state = {'readings': readings,
