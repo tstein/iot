@@ -139,6 +139,7 @@ def water_plant(plant):
     log("watering {}".format(plant.name))
     waterings[plant.name].append(time.time())
     requests.get(water_url.format(plant.line))
+    lib.mqtt.tell("ted", "watered " + plant.name, mqttc)
 
 def save_state():
     state = {'readings': readings,

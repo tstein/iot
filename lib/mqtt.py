@@ -30,5 +30,7 @@ def start_client(service_name):
 def publish_forever(topic, callback):
     _PUBLISH_CALLBACKS[topic] = callback
 
-def tell(whom, what):
-    _MQTTC.publish("tell/" + whom, what)
+def tell(whom, what, client=None):
+    if not client:
+        client = _MQTTC
+    client.publish("tell/" + whom, what)
