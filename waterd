@@ -87,6 +87,8 @@ def moisture_graph(plants):
     figure = Figure()
     ax = figure.add_subplot(111)
     for plant in plants:
+        if not readings[plant.name]: continue
+
         times, water_levels = zip(*readings[plant.name])
         dates = num2date(epoch2num(times))
         ax.plot_date(dates, water_levels, label=plant.name, fmt="-")
