@@ -119,7 +119,7 @@ def history_png():
     temp_ax.plot_date(dates, temps_f, label="temperature (°F)", fmt="r-")
     temp_ax.plot_date(dates, dew_points, label="dew point(°F)", fmt="g-")
     temp_ax.set_ylabel("temperature (°F)", color="r")
-    temp_ax.set_ylim(bottom=30, top=80)
+    temp_ax.set_ylim(bottom=30, top=90)
     temp_handles, temp_labels = temp_ax.get_legend_handles_labels()
 
     temp_ax.legend(temp_handles + rh_handles, temp_labels + rh_labels,
