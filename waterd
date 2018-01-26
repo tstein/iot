@@ -56,7 +56,7 @@ def watering_buffer(): return deque(maxlen=100)
 waterings = defaultdict(watering_buffer)
 
 # web config
-port = 54700
+port = 1547     # 1000 + sum(map(ord, 'water'))
 
 
 # important objects
