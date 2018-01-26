@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+</head>
+<body>
+  <div id='content'>
+      light is {{status}}
+      <br>
+      <br>
+      <form action='/override' method='post'>
+          <b>new override</b><br>
+          <span>
+              start:
+              <input type='date' name='start-date'/>
+              <input type='time' name='start-time'/>
+          </span><br>
+          <span>
+              end:
+              <input type='date' name='end-date'/>
+              <input type='time' name='end-time'/>
+          </span><br>
+          <input type='submit' value='override!'/>
+      </form>
+  </div>
+</body>
+</html>

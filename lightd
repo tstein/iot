@@ -2,9 +2,13 @@
 
 import datetime
 import time
+from collections import namedtuple
+from os.path import expanduser
+from threading import Thread
 
 import pigpio
 import sh
+from flask import Flask, redirect, render_template, request
 
 
 human_hosts = ["tphone", "rphone"]
@@ -12,31 +16,50 @@ light_start = datetime.time(9, 00)
 light_end = datetime.time(17, 00)
 suppress_for = datetime.timedelta(hours=1)
 
+gpio = pigpio.pi()
 light_pin = 4
+
+Override = namedtuple("Override", ["start", "end"])
+overrides = []
+
+service_name = __file__.split("/")[-1]
+app = Flask(service_name)
 
 
 def log(msg):
-    log_file = "/var/log/light.log"
+    log_file = expanduser("~/light.log")
     tstamp = datetime.datetime.now().isoformat()
     with open(log_file, 'a') as l:
         line = "{} - {}\n".format(tstamp, msg)
         l.write(line)
 
+
 def light_time(dt):
-    return 1 <= dt.isoweekday() <= 5 and light_start < dt.time() < light_end
+    return light_start < dt.time() < light_end
+
+
+def override_active(dt):
+    for o in overrides:
+        if o.start < dt < o.end:
+            return True
+    return False
+
 
 def light_ongoing(gpio):
     return bool(gpio.read(light_pin))
+
 
 def commence_light(gpio):
     if not light_ongoing(gpio):
         log("Commencing light.")
         gpio.write(light_pin, 1)
 
+
 def cease_light(gpio):
     if light_ongoing(gpio):
         log("Ceasing light.")
         gpio.write(light_pin, 0)
+
 
 def ping(host):
     try:
@@ -45,31 +68,72 @@ def ping(host):
     except:
         return False
 
+
+def light_loop():
+    suppressed = False
+    suppress_until = datetime.datetime.now()
+
+    while True:
+        time.sleep(1)
+
+        now = datetime.datetime.now()
+
+        # overrides beat everything
+        override = override_active(now)
+        if override:
+            commence_light(gpio)
+            continue
+
+        # if it's outside regularly scheduled light hours, we're done
+        if not light_time(now):
+            cease_light(gpio)
+            continue
+
+        # otherwise, look for human hosts to decide whether to suppress
+        if any(map(ping, human_hosts)):
+            suppress_until = now + suppress_for
+
+        if now < suppress_until:
+            cease_light(gpio)
+            if not suppressed:
+                log("Suppressing.")
+                suppressed = True
+        else:
+            if suppressed:
+                log("Suppression ended.")
+                suppressed = False
+            commence_light(gpio)
+
+
+@app.route("/")
+def light():
+    light_status = 'on' if light_ongoing(gpio) else 'off'
+    return render_template("light.html", status=light_status)
+
+
+@app.route('/override', methods = ['POST'])
+def override_post():
+    start_str = "{} {}".format(
+            request.form['start-date'],
+            request.form['start-time'])
+    end_str = "{} {}".format(
+            request.form['end-date'],
+            request.form['end-time'])
+
+    start = datetime.datetime.strptime(start_str, '%Y-%m-%d %H:%M')
+    end = datetime.datetime.strptime(end_str, '%Y-%m-%d %H:%M')
+
+    overrides.append(Override(start, end))
+
+    return redirect('/')
+
+
 if __name__ == '__main__':
     log("****************")
     log("* Starting up! *")
     log("****************")
-    suppressed = False
-    suppress_until = datetime.datetime.now()
-    gpio = pigpio.pi()
-
-    while True:
-        now = datetime.datetime.now()
-        if light_time(now):
-            if any(map(ping, human_hosts)):
-                suppress_until = now + suppress_for
-
-            if now < suppress_until:
-                cease_light(gpio)
-                if not suppressed:
-                    log("Suppressing.")
-                    suppressed = True
-            else:
-                if suppressed:
-                    log("Suppression ended.")
-                    suppressed = False
-                commence_light(gpio)
-        else:
-            cease_light(gpio)
-
-        time.sleep(1)
+    Thread(target=light_loop, daemon=True).start()
+    # beware: If you run flask with debug=True, it will spin up two copies of
+    # the light_loop, only one will get state changes, and they will
+    # dramatically fight each other.
+    app.run(host="0.0.0.0", port=1536)  # 1000 + sum(map(ord, "light"))
