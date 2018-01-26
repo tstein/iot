@@ -1,26 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/light.css')}}"/>
 </head>
-<body>
-  <div id='content'>
-      light is {{status}}
-      <br>
-      <br>
-      <form action='/override' method='post'>
-          <b>new override</b><br>
-          <span>
-              start:
-              <input type='date' name='start-date'/>
-              <input type='time' name='start-time'/>
-          </span><br>
-          <span>
-              end:
-              <input type='date' name='end-date'/>
-              <input type='time' name='end-time'/>
-          </span><br>
-          <input type='submit' value='override!'/>
-      </form>
-  </div>
+<body id="body" class="body-light-off">
+    <div id="content" class="overrides">
+        <span id="light-status" class="light-status">
+            {{"it's on" if status else "it's off"}}
+        </span>
+        <form action="/override" method="post">
+            <b class="override-header">new override</b>
+            <div class="override-input">
+                <span class="override-label">start:</span>
+                <input type="date" name="start-date"/>
+                <input type="time" name="start-time"/>
+            </div>
+            <div class="override-input">
+                <span class="override-label">end:</span>
+                <input type="date" name="end-date"/>
+                <input type="time" name="end-time"/>
+            </div>
+            <input type="submit" value="override!"/>
+        </form>
+    </div>
+    <script src="{{ url_for('static', filename='js/light.js')}}"></script>
 </body>
 </html>

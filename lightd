@@ -107,8 +107,13 @@ def light_loop():
 
 @app.route("/")
 def light():
-    light_status = 'on' if light_ongoing(gpio) else 'off'
+    light_status = light_ongoing(gpio)
     return render_template("light.html", status=light_status)
+
+
+@app.route("/state")
+def status():
+    return "on" if light_ongoing(gpio) else "off"
 
 
 @app.route('/override', methods = ['POST'])

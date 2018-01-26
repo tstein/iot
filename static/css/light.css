@@ -1,0 +1,39 @@
+.body-light-off {
+    background: #dddddd;
+    transition: background-color 1000ms linear;
+}
+
+.body-light-on {
+    background: #dd88dd;
+    transition: background-color 1000ms linear;
+}
+
+.light-status {
+    font-size: 100px;
+    text-align: center;
+}
+
+.overrides {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-gap: 20px;
+    max-width: 400px;
+    margin: auto auto;
+}
+
+.override-header {
+    font-size: x-large;
+    margin-bottom: 10px
+}
+
+.override-label {
+    font-size: larger;
+    vertical-align: middle;
+}
+
+.override-input {
+    display: grid;
+    grid-template-columns: 2fr 5fr 4fr;
+    grid-gap: 20px;
+    margin: 10px 0 10px 0;
+}
