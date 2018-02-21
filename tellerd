@@ -9,25 +9,32 @@ from sh import signal_cli
 
 import lib.mqtt
 
-TELLER_PHONE = "TELLER_PHONE"
+TELLER_PHONE_CC = "TELLER_PHONE_CC"
 TED_PHONE = "TED_PHONE"
+TED_PHONE_CC = "TED_PHONE_CC"
 RUBA_PHONE = "RUBA_PHONE"
-ENVVARS = [TELLER_PHONE, TED_PHONE, RUBA_PHONE]
+RUBA_PHONE_CC = "RUBA_PHONE_CC"
+ENVVARS = [TELLER_PHONE_CC, TED_PHONE, TED_PHONE_CC, RUBA_PHONE, RUBA_PHONE_CC]
 
 # important objects
-mqttc = paho.mqtt.client.Client(socket.gethostname())
+mqttc = paho.mqtt.client.Client(socket.gethostname() + "-tellerd")
 
 def signal(number, message):
-    signal_cli("-u", os.environ[TELLER_PHONE],
+    signal_cli("-u", os.environ[TELLER_PHONE_CC],
                "send",
                "-m", message,
                number)
 
+def mms_tmo(number, message):
+    os.system("echo | mail -s '{}' {}@tmomail.net".format(message, number))
+
 def tell_ted(message):
-    signal(os.environ[TED_PHONE], message)
+    print("telling ted: " + message)
+    mms_tmo(os.environ[TED_PHONE], message)
 
 def tell_ruba(message):
-    signal(os.environ[RUBA_PHONE], message)
+    print("telling ruba: " + message)
+    mms_tmo(os.environ[RUBA_PHONE], message)
 
 def on_message(client, userdata, message):
     tell_whom = message.topic.split("/")[1]
