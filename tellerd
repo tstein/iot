@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import os
 import socket
 import sys
@@ -29,11 +30,11 @@ def mms_tmo(number, message):
     os.system("echo | mail -s '{}' {}@tmomail.net".format(message, number))
 
 def tell_ted(message):
-    print("telling ted: " + message)
+    logging.info("telling ted: " + message)
     mms_tmo(os.environ[TED_PHONE], message)
 
 def tell_ruba(message):
-    print("telling ruba: " + message)
+    logging.info("telling ruba: " + message)
     mms_tmo(os.environ[RUBA_PHONE], message)
 
 def on_message(client, userdata, message):
@@ -53,6 +54,8 @@ if __name__ == "__main__":
             print("{} not in environment".format(var))
             sys.exit(1)
 
+    logging.basicConfig(
+            format='%(levelname)s: %(name)s: %(message)s', level=logging.INFO)
     mqttc.connect(lib.mqtt.server)
     mqttc.on_message = on_message
     mqttc.subscribe("tell/+")
