@@ -1,0 +1,11 @@
+[Unit]
+Description=photo-pulling daemon
+
+[Service]
+User=science
+ExecStart=/home/science/code/science-daemons/photosd
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

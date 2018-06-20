@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+
+import datetime
+import logging
+import os
+import shutil
+import tempfile
+import time
+
+import gphoto2 as gp
+
+from lib import config, mqtt
+
+
+DARKROOM_ROOT = '/mnt/darkroom'
+OPERATORS = {'D800':  'ted',
+             'D7100': 'ruba'}
+
+
+def parse_summary(camera, context):
+  summary = gp.check_result(gp.gp_camera_get_summary(camera, context))
+  prop_strings = [p.split(':') for p in summary.text.split("\n") if ':' in p]
+  props = {p[0]: p[1].strip() for p in prop_strings}
+  return props
+
+
+def get_model(camera, context):
+  props = parse_summary(camera, context)
+  return props['Model']
+
+
+def find_photos(camera, path='/'):
+  files = gp.check_result(
+      gp.gp_camera_folder_list_files(camera, path))
+  for name, _ in files:
+    yield os.path.join(path, name)
+
+  folders = gp.check_result(
+      gp.gp_camera_folder_list_folders(camera, path))
+  for name, _ in folders:
+    yield from find_photos(camera, os.path.join(path, name))
+
+
+def pull_photo(camera, file_path, dest_dir):
+  folder, name = os.path.split(file_path)
+  dest_path = os.path.join(dest_dir, name)
+  camera_file = gp.check_result(gp.gp_camera_file_get(
+    camera, folder, name, gp.GP_FILE_TYPE_NORMAL))
+  gp.check_result(gp.gp_file_save(camera_file, dest_path))
+  return dest_path
+
+
+def pull_photos(camera, model):
+  tempdir = tempfile.mkdtemp()
+  pulled_photos = [pull_photo(camera, p, tempdir) for p in find_photos(camera)]
+  logging.info('pulled %d photos: %s', len(pulled_photos), pulled_photos)
+
+  new_photos = pulled_photos
+
+  darkroom_album = os.path.join(
+      model, datetime.date.strftime(datetime.date.today(), '%Y-%m-%d'))
+  darkroom_dir = os.path.join(DARKROOM_ROOT, darkroom_album)
+  try:
+    os.makedirs(darkroom_dir)
+  except FileExistsError:
+    pass
+
+  for photo in pulled_photos:
+    _, name = os.path.split(photo)
+    darkroom_path = os.path.join(darkroom_dir, name)
+    shutil.copyfile(photo, darkroom_path)
+  logging.info('copied %d photos to darkroom: %s', len(new_photos), new_photos)
+
+  shutil.rmtree(tempdir)
+  return new_photos
+
+
+def main():
+  logging.basicConfig(
+      format='%(levelname)s: %(name)s: %(message)s', level=logging.INFO)
+  gp.check_result(gp.use_python_logging())
+  mqtt.start_client(config.service_name())
+
+  context = gp.gp_context_new()
+  processed = False
+
+  while True:
+    time.sleep(2)
+    try:
+      camera = gp.check_result(gp.gp_camera_new())
+      gp.check_result(gp.gp_camera_init(camera))
+    except gp.GPhoto2Error as ex:
+      if ex.code == gp.GP_ERROR_MODEL_NOT_FOUND:
+        processed = False
+        continue
+
+    if not processed:
+      model = get_model(camera, context)
+      logging.info('found a %s', model)
+
+      new_photos = pull_photos(camera, model)
+      mqtt.tell(
+          OPERATORS[model] if model in OPERATORS else 'photosd_unknown',
+          'pulled {} new photos from the {}'.format(len(new_photos), model))
+
+      gp.check_result(gp.gp_camera_exit(camera))
+      processed = True
+
+
+if __name__ == '__main__':
+  main()
+
+
+# vim:shiftwidth=2
