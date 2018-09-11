@@ -13,8 +13,11 @@ from lib import config, mqtt
 
 
 DARKROOM_ROOT = '/mnt/darkroom'
-OPERATORS = {'D800':  'ted',
-             'D7100': 'ruba'}
+OPERATORS = {
+    'D800':  'ted',
+    'E5823': 'ted',
+    'D7100': 'ruba'
+}
 
 
 def parse_summary(camera, context):
@@ -29,11 +32,16 @@ def get_model(camera, context):
   return props['Model']
 
 
+def get_operator(model):
+  return OPERATORS[model] if model in OPERATORS else 'photosd_unknown'
+
+
 def find_photos(camera, path='/'):
   files = gp.check_result(
       gp.gp_camera_folder_list_files(camera, path))
   for name, _ in files:
-    yield os.path.join(path, name)
+    if 'DCIM' in path:
+      yield os.path.join(path, name)
 
   folders = gp.check_result(
       gp.gp_camera_folder_list_folders(camera, path))
@@ -50,13 +58,7 @@ def pull_photo(camera, file_path, dest_dir):
   return dest_path
 
 
-def pull_photos(camera, model):
-  tempdir = tempfile.mkdtemp()
-  pulled_photos = [pull_photo(camera, p, tempdir) for p in find_photos(camera)]
-  logging.info('pulled %d photos: %s', len(pulled_photos), pulled_photos)
-
-  new_photos = pulled_photos
-
+def pull_photos(camera, model, operator):
   darkroom_album = os.path.join(
       model, datetime.date.strftime(datetime.date.today(), '%Y-%m-%d'))
   darkroom_dir = os.path.join(DARKROOM_ROOT, darkroom_album)
@@ -65,14 +67,17 @@ def pull_photos(camera, model):
   except FileExistsError:
     pass
 
-  for photo in pulled_photos:
-    _, name = os.path.split(photo)
-    darkroom_path = os.path.join(darkroom_dir, name)
-    shutil.copyfile(photo, darkroom_path)
-  logging.info('copied %d photos to darkroom: %s', len(new_photos), new_photos)
+  pull_start = time.time()
+  found_photos = find_photos(camera)
+  pulled_photos = [pull_photo(camera, p, darkroom_dir) for p in found_photos]
+  pull_elapsed = int(time.time() - pull_start)
 
-  shutil.rmtree(tempdir)
-  return new_photos
+  total_size_mb = sum([os.path.getsize(p) for p in pulled_photos]) / 2**20
+  pull_rate = total_size_mb / pull_elapsed
+  logging.info('pulled %d photos (%d MB) in %d s (%.1f MB/s): %s',
+      len(pulled_photos), total_size_mb, pull_elapsed, pull_rate,
+      pulled_photos)
+  return pulled_photos
 
 
 def main():
@@ -86,24 +91,34 @@ def main():
 
   while True:
     time.sleep(2)
-    try:
-      camera = gp.check_result(gp.gp_camera_new())
-      gp.check_result(gp.gp_camera_init(camera))
-    except gp.GPhoto2Error as ex:
-      if ex.code == gp.GP_ERROR_MODEL_NOT_FOUND:
-        processed = False
-        continue
+    cameras = gp.check_result(gp.gp_camera_autodetect())
+    if not cameras:
+      processed = False
+      continue
 
     if not processed:
-      model = get_model(camera, context)
-      logging.info('found a %s', model)
+      name, addr = cameras[0]
+      camera = gp.Camera()
+      port_info_list = gp.PortInfoList()
+      port_info_list.load()
+      idx = port_info_list.lookup_path(addr)
+      camera.set_port_info(port_info_list[idx])
+      try:
+        camera.init()
 
-      new_photos = pull_photos(camera, model)
-      mqtt.tell(
-          OPERATORS[model] if model in OPERATORS else 'photosd_unknown',
-          'pulled {} new photos from the {}'.format(len(new_photos), model))
+        model = get_model(camera, context)
+        operator = get_operator(model)
+        logging.info('found %s\'s %s', operator, model)
 
-      gp.check_result(gp.gp_camera_exit(camera))
+        new_photos = pull_photos(camera, model, operator)
+        mqtt.tell(
+            operator,
+            'pulled {} new photos from the {}'.format(len(new_photos), model))
+
+        camera.exit()
+      except gp.GPhoto2Error as e:
+        logging.error(e)
+        continue
       processed = True
 
 
