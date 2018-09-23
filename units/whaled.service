@@ -1,0 +1,12 @@
+[Unit]
+Description=whale illumination daemon
+
+[Service]
+User=ted
+ExecStart=/home/ted/code/science-daemons/whaled
+WorkingDirectory=/home/ted/code/science-daemons
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

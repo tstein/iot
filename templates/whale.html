@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    </head>
+    <body>
+        <div id="content">
+            hoot is currently {{ current_color }}
+            <form action="/color" method="post">
+                <span>change to </span>
+                <select name="new_color" onchange="this.form.submit()">
+                    <option value="" selected disabled hidden/>
+                    {% for c in all_colors %}
+                    <option value="{{ c }}">{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+    </body>
+</html>

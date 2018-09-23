@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+
+import datetime
+import time
+from collections import namedtuple
+from enum import Enum
+from os.path import expanduser
+from threading import Thread
+
+import RPi.GPIO as GPIO
+from flask import Flask, redirect, render_template, request
+
+# Pi board pin numbers
+PIN_R = 21  # 9
+PIN_G = 18  # 24
+PIN_B = 22  # 25
+PIN_W = 19  # 10
+
+class Color(Enum):
+    RED = frozenset((PIN_R,))
+    GREEN = frozenset((PIN_G,))
+    BLUE = frozenset((PIN_B,))
+    CYAN = frozenset((PIN_G, PIN_B))
+    MAGENTA = frozenset((PIN_R, PIN_B))
+    YELLOW = frozenset((PIN_R, PIN_G))
+    WHITE = frozenset((PIN_W,))
+    WHITER = frozenset((PIN_R, PIN_G, PIN_B, PIN_W))
+    OFF = frozenset()
+
+service_name = __file__.split("/")[-1]
+app = Flask(service_name)
+CURRENT_COLOR = Color.MAGENTA
+
+def log(msg):
+    log_file = expanduser("~/whale.log")
+    tstamp = datetime.datetime.now().isoformat()
+    with open(log_file, 'a') as l:
+        line = "{} - {}\n".format(tstamp, msg)
+        l.write(line)
+
+def setup():
+    """None of these pins are outputs by default. set_color() will change pin
+    states, but the LEDs won't actually turn on until you call this.
+    Idempotent."""
+    GPIO.setmode(GPIO.BOARD)
+    for pin in Color.WHITER.value:
+        GPIO.setup(pin, GPIO.OUT)
+
+def set_color(color):
+    global CURRENT_COLOR
+
+    pins_off = Color.WHITER.value - color.value
+    pins_on = color.value
+
+    for pin in pins_off:
+        GPIO.output(pin, GPIO.LOW)
+
+    for pin in pins_on:
+        GPIO.output(pin, GPIO.HIGH)
+
+    CURRENT_COLOR = color
+
+def get_color(name):
+    for c in Color:
+        if name == c.name.lower():
+            return c
+    return None
+
+@app.route("/")
+def index():
+    all_colors = [c.name.lower() for c in Color]
+    current_color = CURRENT_COLOR.name.lower()
+    return render_template(
+            "whale.html",
+            all_colors=all_colors,
+            current_color=current_color)
+
+@app.route("/color", methods=["POST"])
+def change_color():
+    new_color_name = request.form["new_color"]
+    new_color = get_color(new_color_name)
+    if not new_color:
+        log("invalid color %s".format(new_color_name))
+        return redirect("/")
+
+    log("changing color to %s".format(new_color_name))
+    set_color(new_color)
+    return redirect("/")
+
+
+if __name__ == "__main__":
+    log("****************")
+    log("* Starting up! *")
+    log("****************")
+    setup()
+    set_color(CURRENT_COLOR)
+    app.run(host="0.0.0.0", port=1529)  # 1000 + sum(map(ord, "whale"))
