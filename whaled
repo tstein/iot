@@ -29,7 +29,7 @@ class Color(Enum):
 
 service_name = __file__.split("/")[-1]
 app = Flask(service_name)
-CURRENT_COLOR = Color.MAGENTA
+CURRENT_COLOR = Color.BLUE
 
 def log(msg):
     log_file = expanduser("~/whale.log")
