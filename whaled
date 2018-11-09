@@ -81,10 +81,10 @@ def change_color():
     new_color_name = request.form["new_color"]
     new_color = get_color(new_color_name)
     if not new_color:
-        log("invalid color %s".format(new_color_name))
+        log("invalid color {}".format(new_color_name))
         return redirect("/")
 
-    log("changing color to %s".format(new_color_name))
+    log("changing color to {}".format(new_color_name))
     set_color(new_color)
     return redirect("/")
 
