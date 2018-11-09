@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="shortcut icon" href="{{ url_for('static', filename='ico/laundry.ico') }}">
+{% endblock %}
+
+{% block content %}
+<canvas id="washer-chart" width="400" height="400"></canvas>
+<canvas id="dryer-chart" width="400" height="400"></canvas>
+{% endblock %}
+
+{% block foot %}
+    <script type="text/javascript"
+            src="{{ url_for('static', filename='js/Chart.bundle.js') }}"></script>
+    <script type="text/javascript"
+            src="{{ url_for('static', filename='js/laundry.js') }}"></script>
+{% endblock %}

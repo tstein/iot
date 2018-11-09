@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 
 import datetime
+import json
+import operator
 import time
 from collections import deque
 from itertools import islice
 from os.path import expanduser
+from threading import Thread
 
 import pigpio
+from flask import Flask, redirect, render_template, request
 
 from lib import config, mqtt
 
@@ -37,12 +41,26 @@ LIS331_Y_H = 0x2B
 LIS331_Z_L = 0x2C
 LIS331_Z_H = 0x2D
 
-window_length = 60 * 60
-def buffer(): return deque(maxlen=window_length)
+WINDOW_LENGTH = 60 * 60
+def buffer(): return deque(maxlen=WINDOW_LENGTH)
+
+app = Flask(config.service_name())
+
 washer_red_readings = buffer()
 dryer_accel_readings = buffer()
 washer_state = "idle"
 dryer_state = "idle"
+
+def log(msg):
+    log_file = "/var/log/laundry.log"
+    tstamp = datetime.datetime.now().isoformat()
+    with open(log_file, 'a') as l:
+        line = "{} - {}\n".format(tstamp, msg)
+        l.write(line)
+
+def now():
+    """ How can parsing Unix time in Chart+moment be so hard?? """
+    return datetime.datetime.now().isoformat()
 
 def i2c_write(dev, register, val):
     gpio.i2c_write_byte_data(dev, register, val)
@@ -80,19 +98,27 @@ def read_dryer_accel(dev):
     # axis with some probability while the dryer is idle. For some reason, this
     # probability is significantly lower if you actually read the low bytes, so
     # we read them and throw them away.
-    i2c_read(dev, LIS331_X_L)
-    x_high = i2c_read(dev, LIS331_X_H)
-    i2c_read(dev, LIS331_Y_L)
-    y_high = i2c_read(dev, LIS331_Y_H)
-    i2c_read(dev, LIS331_Z_L)
-    z_high = i2c_read(dev, LIS331_Z_H)
-    return x_high + y_high + z_high
+    samples = 100
+    sample_sum = 0
+    start = time.time()
+    for i in range(samples):
+        i2c_read(dev, LIS331_X_L)
+        x_high = i2c_read(dev, LIS331_X_H)
+        i2c_read(dev, LIS331_Y_L)
+        y_high = i2c_read(dev, LIS331_Y_H)
+        i2c_read(dev, LIS331_Z_L)
+        z_high = i2c_read(dev, LIS331_Z_H)
+        sample_sum += x_high + y_high + z_high
+    end = time.time()
+    print("read {} samples in {} s".format(samples, end - start))
+    return int(sample_sum / samples)
 
 def update_washer_state():
     global washer_state
     if not washer_red_readings: return
 
-    red = washer_red_readings[-1]
+    red = washer_red_readings[-1][0]
+    log("washer red={}".format(red))
     if red < 2:
         washer_state = "idle"
     elif 2 <= red < 6:
@@ -107,46 +133,65 @@ def update_dryer_state():
     if len(dryer_accel_readings) < 60: return
 
     rs = len(dryer_accel_readings)
-    accel_sum = sum(islice(dryer_accel_readings, rs - 60, rs))
-    if 0 <= accel_sum < 2750:
+    accel_sum = sum(
+            map(operator.itemgetter(0),
+                islice(dryer_accel_readings, rs - 60, rs)))
+    log("dryer accel_sum={}".format(accel_sum))
+    if 0 <= accel_sum < 3300:
         if dryer_state != "idle":
             mqtt.tell("ted", "dryer is done")
         dryer_state = "idle"
     else:
         dryer_state = "drying"
 
-def main():
+def monitor_washer():
     try:
-        trace = open(expanduser("~/last_wash.csv"), "w")
         washer_light_i2c = gpio.i2c_open(I2C_BUS, ISL29125_I2C)
-        dryer_accel_i2c = gpio.i2c_open(I2C_BUS, LIS331_I2C)
-
         init_washer_light(washer_light_i2c)
-        init_dryer_accel(dryer_accel_i2c)
-
-        mqtt.start_client(config.service_name())
-        mqtt.publish_forever("laundry/washer", lambda: washer_state)
-        mqtt.publish_forever("laundry/dryer", lambda: dryer_state)
 
         while True:
             washer_red = read_washer_light_red(washer_light_i2c)
-            washer_green = read_washer_light_green(washer_light_i2c)
-            dryer_accel = read_dryer_accel(dryer_accel_i2c)
-
-            washer_red_readings.append(washer_red)
-            dryer_accel_readings.append(dryer_accel)
-
+            washer_red_readings.append((washer_red, now()))
             update_washer_state()
-            update_dryer_state()
-
-            line = ",".join(map(str, [time.time(), washer_red, washer_green, dryer_accel]))
-            trace.write(line + "\n")
-            trace.flush()
             time.sleep(1)
     finally:
-        trace.close()
         gpio.i2c_close(washer_light_i2c)
+
+def monitor_dryer():
+    try:
+        dryer_accel_i2c = gpio.i2c_open(I2C_BUS, LIS331_I2C)
+        init_dryer_accel(dryer_accel_i2c)
+
+        while True:
+            dryer_accel = read_dryer_accel(dryer_accel_i2c)
+            dryer_accel_readings.append((dryer_accel, now()))
+            update_dryer_state()
+            time.sleep(1)
+    finally:
         gpio.i2c_close(dryer_accel_i2c)
 
-if __name__ == "__main__":
-    main()
+
+@app.route("/")
+def index():
+    return render_template("laundry.html")
+
+@app.route("/washer_red")
+def washer_red():
+    return json.dumps(list(washer_red_readings)[0:-1:10])
+
+@app.route("/dryer_accel")
+def dryer_accel():
+    return json.dumps(list(dryer_accel_readings))
+
+if __name__ == '__main__':
+    log("****************")
+    log("* Starting up! *")
+    log("****************")
+
+    mqtt.start_client(config.service_name())
+    mqtt.publish_forever("laundry/washer", lambda: washer_state)
+    mqtt.publish_forever("laundry/dryer", lambda: dryer_state)
+
+    Thread(target=monitor_washer, daemon=True).start()
+    Thread(target=monitor_dryer, daemon=True).start()
+    app.run(host="0.0.0.0", port=1767)  # 1000 + sum(map(ord, "laundry"))

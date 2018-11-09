@@ -1,21 +1,18 @@
-<!DOCTYPE html>
-<html>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <head>
-        <link rel="shortcut icon" href="{{ url_for('static', filename='ico/whale.ico') }}">
-    </head>
-    <body>
-        <div id="content">
-            hoot is currently {{ current_color }}
-            <form action="/color" method="post">
-                <span>change to </span>
-                <select name="new_color" onchange="this.form.submit()">
-                    <option value="" selected disabled hidden/>
-                    {% for c in all_colors %}
-                    <option value="{{ c }}">{{ c }}</option>
-                    {% endfor %}
-                </select>
-            </form>
-        </div>
-    </body>
-</html>
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="shortcut icon" href="{{ url_for('static', filename='ico/whale.ico') }}">
+{% endblock %}
+
+{% block content %}
+hoot is currently {{ current_color }}
+<form action="/color" method="post">
+    <span>change to </span>
+    <select name="new_color" onchange="this.form.submit()">
+        <option value="" selected disabled hidden/>
+        {% for c in all_colors %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endblock %}

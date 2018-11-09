@@ -10,6 +10,8 @@ from threading import Thread
 import RPi.GPIO as GPIO
 from flask import Flask, redirect, render_template, request
 
+from lib import config
+
 # Pi board pin numbers
 PIN_R = 21  # 9
 PIN_G = 18  # 24
@@ -27,8 +29,7 @@ class Color(Enum):
     WHITER = frozenset((PIN_R, PIN_G, PIN_B, PIN_W))
     OFF = frozenset()
 
-service_name = __file__.split("/")[-1]
-app = Flask(service_name)
+app = Flask(config.service_name())
 CURRENT_COLOR = Color.BLUE
 
 def log(msg):
