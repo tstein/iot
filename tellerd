@@ -31,11 +31,11 @@ def mms_tmo(number, message):
 
 def tell_ted(message):
     logging.info("telling ted: " + message)
-    mms_tmo(os.environ[TED_PHONE], message)
+    signal(os.environ[TED_PHONE_CC], message)
 
 def tell_ruba(message):
     logging.info("telling ruba: " + message)
-    mms_tmo(os.environ[RUBA_PHONE], message)
+    signal(os.environ[RUBA_PHONE_CC], message)
 
 def on_message(client, userdata, message):
     tell_whom = message.topic.split("/")[1]

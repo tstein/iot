@@ -1,6 +1,7 @@
 [Unit]
 Description=telling daemon
 Requires=mosquitto.service
+After=mosquitto.service
 
 [Service]
 User=ted
