@@ -3,6 +3,7 @@
 import datetime
 import json
 import operator
+import socket
 import time
 from collections import deque
 from itertools import islice
@@ -15,6 +16,8 @@ from flask import Flask, redirect, render_template, request
 from lib import config, mqtt
 
 gpio = pigpio.pi()
+
+PORT = 1767     # 1000 + sum(map(ord, "laundry"))
 
 I2C_BUS = 1
 
@@ -44,6 +47,9 @@ LIS331_Z_H = 0x2D
 WINDOW_LENGTH = 60 * 60
 def buffer(): return deque(maxlen=WINDOW_LENGTH)
 
+TELL_RUBA_INTERVAL = 6 * 60 * 60    # six hours
+TELL_RUBA_UNTIL = 0
+
 app = Flask(config.service_name())
 
 washer_red_readings = buffer()
@@ -54,9 +60,16 @@ dryer_state = "idle"
 def log(msg):
     log_file = "/var/log/laundry.log"
     tstamp = datetime.datetime.now().isoformat()
+    line = "{} - {}".format(tstamp, msg)
+    print(line)
     with open(log_file, 'a') as l:
-        line = "{} - {}\n".format(tstamp, msg)
-        l.write(line)
+        l.write(line + "\n")
+
+def tell(what):
+    if time.time() - TELL_RUBA_UNTIL < TELL_RUBA_INTERVAL:
+        mqtt.tell("ruba", what)
+    else:
+        mqtt.tell("ted", what)
 
 def now():
     """ How can parsing Unix time in Chart+moment be so hard?? """
@@ -110,7 +123,6 @@ def read_dryer_accel(dev):
         z_high = i2c_read(dev, LIS331_Z_H)
         sample_sum += x_high + y_high + z_high
     end = time.time()
-    print("read {} samples in {} s".format(samples, end - start))
     return int(sample_sum / samples)
 
 def update_washer_state():
@@ -118,14 +130,13 @@ def update_washer_state():
     if not washer_red_readings: return
 
     red = washer_red_readings[-1][0]
-    log("washer red={}".format(red))
     if red < 2:
         washer_state = "idle"
     elif 2 <= red < 6:
         washer_state = "washing"
     else:
         if washer_state != "done":
-            mqtt.tell("ted", "washer is done")
+            tell("washer is done")
         washer_state = "done"
 
 def update_dryer_state():
@@ -136,10 +147,9 @@ def update_dryer_state():
     accel_sum = sum(
             map(operator.itemgetter(0),
                 islice(dryer_accel_readings, rs - 60, rs)))
-    log("dryer accel_sum={}".format(accel_sum))
     if 0 <= accel_sum < 3300:
         if dryer_state != "idle":
-            mqtt.tell("ted", "dryer is done")
+            tell("dryer is done")
         dryer_state = "idle"
     else:
         dryer_state = "drying"
@@ -175,6 +185,22 @@ def monitor_dryer():
 def index():
     return render_template("laundry.html")
 
+@app.route("/launderer")
+def launderer():
+    """ An abuse of GET, but you can't put a POST on an NFC sticker. """
+    global TELL_RUBA_UNTIL
+    remote_addr = request.remote_addr
+    if remote_addr == "127.0.0.1":
+        # This connection was proxied - redirect to the real port.
+        return redirect("http://laundry:{}/launderer".format(PORT))
+
+    remote_host = socket.gethostbyaddr(remote_addr)[0].split(".")[0]
+    log("received request on /launderer from {}".format(remote_host))
+    if remote_host == "rphone":
+        log("telling ruba for a while")
+        TELL_RUBA_UNTIL = time.time() + TELL_RUBA_INTERVAL
+    return redirect("http://laundry")
+
 @app.route("/washer_red")
 def washer_red():
     return json.dumps(list(washer_red_readings)[0:-1:10])
@@ -194,4 +220,4 @@ if __name__ == '__main__':
 
     Thread(target=monitor_washer, daemon=True).start()
     Thread(target=monitor_dryer, daemon=True).start()
-    app.run(host="0.0.0.0", port=1767)  # 1000 + sum(map(ord, "laundry"))
+    app.run(host="0.0.0.0", port=PORT)
