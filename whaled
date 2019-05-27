@@ -10,7 +10,7 @@ from threading import Thread
 import RPi.GPIO as GPIO
 from flask import Flask, redirect, render_template, request
 
-from lib import config
+from lib import config, mqtt
 
 # Pi board pin numbers
 PIN_R = 21  # 9
@@ -30,6 +30,7 @@ class Color(Enum):
     OFF = frozenset()
 
 app = Flask(config.service_name())
+CURRENT_STATE = True
 CURRENT_COLOR = Color.BLUE
 
 def log(msg):
@@ -59,13 +60,43 @@ def set_color(color):
     for pin in pins_on:
         GPIO.output(pin, GPIO.HIGH)
 
-    CURRENT_COLOR = color
+    if color != Color.OFF:
+        CURRENT_COLOR = color
 
 def get_color(name):
     for c in Color:
         if name == c.name.lower():
             return c
     return None
+
+def on_pub_state(state):
+    global CURRENT_STATE
+    if state == "ON":
+        CURRENT_STATE = True
+    else:   # state == "FALSE"
+        CURRENT_STATE = False
+
+    if CURRENT_STATE:
+        set_color(CURRENT_COLOR)
+    else:
+        set_color(Color.OFF)
+
+def on_pub_color(rgb_color):
+    def p_and_r(x):
+        x = int(x)
+        return 0 if x < 127 else 255
+
+    r, g, b = map(p_and_r, str(rgb_color).split(","))
+    color = {
+            (255, 255, 255): Color.WHITE,
+            (255,   0,   0): Color.RED,
+            (  0, 255,   0): Color.GREEN,
+            (  0,   0, 255): Color.BLUE,
+            (  0, 255, 255): Color.CYAN,
+            (255,   0, 255): Color.MAGENTA,
+            (255, 255,   0): Color.YELLOW,
+            }[(r, g, b)]
+    set_color(color)
 
 @app.route("/")
 def index():
@@ -88,11 +119,15 @@ def change_color():
     set_color(new_color)
     return redirect("/")
 
-
 if __name__ == "__main__":
     log("****************")
     log("* Starting up! *")
     log("****************")
+
+    mqtt.start_client(config.service_name())
+    mqtt.subscribe("light/hoot/state", on_pub_state)
+    mqtt.subscribe("light/hoot/color", on_pub_color)
+
     setup()
     set_color(CURRENT_COLOR)
     app.run(host="0.0.0.0", port=1529)  # 1000 + sum(map(ord, "whale"))
