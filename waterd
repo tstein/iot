@@ -13,12 +13,10 @@ from statistics import mean
 from threading import Thread
 from time import sleep
 
-import Adafruit_GPIO.SPI as SPI
-import Adafruit_MCP3008
 import paho.mqtt.client
-import pigpio
 import pytz
 import requests
+import smbus
 from flask import Flask, render_template, send_file
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.dates import epoch2num, num2date, DateFormatter, DayLocator
@@ -28,16 +26,12 @@ import lib.mqtt
 
 
 # plant config
-Plant = namedtuple("Plant", ("name", "pin", "channel", "line", "threshold"))
+Plant = namedtuple("Plant", ("name", "addr", "line", "threshold"))
 plants = [
-          Plant(          "avocado",  21,    0,         11,     .45),
-          Plant(      "dragonfruit",  20,    1,         12,     .00),
-          Plant(         "laymoona",  16,    2,         13,     .00),
-          Plant(        "palm bush",  12,    3,         14,     .00),
-          #Plant(          "empty 4",  25,    4,        127,     .00),
-          #Plant(          "empty 5",  24,    5,        127,     .00),
-          #Plant(          "empty 6",  23,    6,        127,     .00),
-          #Plant(          "empty 7",  18,    7,        127,     .00),
+          Plant(          "avocado",   0x21,     11,         .45),
+          Plant(      "dragonfruit",   0x22,     12,         .00),
+          Plant(         "laymoona",   0x23,     13,         .00),
+          Plant(           "coffee",   0x24,     14,         .00),
 ]
 
 # moisture reading config
@@ -46,9 +40,10 @@ window_length = 6 * 24 * 7    # one week
 reads_per_log = 6             # one hour
 def moisture_buffer(): return deque(maxlen=window_length)
 readings = defaultdict(moisture_buffer)
+MOISTURE_REG = 0x0
 
 # watering config
-water_url = "http://admin:12345@192.168.0.100/script?run{:03}=run"
+water_url = "http://admin:12345@dliwps/script?run{:03}=run"
 switch_auth = ("admin", 12345)
 reads_per_watering_check = 6  # one hour
 minimum_water_interval = 60 * 60 * 24 * 3   # three days
@@ -58,11 +53,9 @@ waterings = defaultdict(watering_buffer)
 # web config
 port = 1547     # 1000 + sum(map(ord, 'water'))
 
-
 # important objects
 app = Flask(__name__)
-gpio = pigpio.pi()
-mcp = Adafruit_MCP3008.MCP3008(spi=SPI.SpiDev(0, 0))
+smbus = smbus.SMBus(1)
 mqttc = paho.mqtt.client.Client(socket.gethostname())
 
 
@@ -76,12 +69,11 @@ def log(msg):
 def avg(readings):
     return round(mean([r[1] for r in readings]), 3)
 
-def read_moisture(pin, channel):
-    gpio.write(pin, 1)
-    sleep(.005)
-    val = mcp.read_adc(channel) / 1024.0
-    gpio.write(pin, 0)
-    return val
+def read_moisture(plant):
+    data = smbus.read_word_data(plant.addr, MOISTURE_REG)
+    val = (data >> 8) + ((data & 0xFF) << 8)
+    print("{} raw moisture: {}".format(plant.name, val))
+    return (val - 128) / 200.0
 
 def moisture_graph(plants):
     figure = Figure()
@@ -112,7 +104,7 @@ def monitor_water(plants):
     ticks = 0
     while True:
         for plant in plants:
-            moisture = round(read_moisture(plant.pin, plant.channel), 3)
+            moisture = round(read_moisture(plant), 3)
             if moisture == 0.0: continue
             readings[plant.name].append((time.time(), moisture))
             mqttc.publish(
@@ -141,7 +133,8 @@ def monitor_water(plants):
 def water_plant(plant):
     log("watering {}".format(plant.name))
     waterings[plant.name].append(time.time())
-    requests.get(water_url.format(plant.line))
+    # clean the damn thing!
+    #requests.get(water_url.format(plant.line))
     lib.mqtt.tell("ted", "watered " + plant.name, mqttc)
 
 def prune_state():
@@ -177,12 +170,12 @@ def load_state():
 
 @app.route("/water_levels")
 def water_levels():
-    levels = dict((p.name, avg(p.readings)) for p in plants)
+    levels = dict((p.name, avg(readings[p.name])) for p in plants)
     return json.dumps(levels)
 
 @app.route("/water_levels/live")
 def live_water_levels():
-    levels = dict((p.name, read_moisture(p.pin, p.channel)) for p in plants)
+    levels = dict((p.name, read_moisture(p)) for p in plants)
     return json.dumps(levels)
 
 @app.route("/water_levels/graph")

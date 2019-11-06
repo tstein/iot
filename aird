@@ -151,9 +151,12 @@ if __name__ == '__main__':
     log("* Starting up! *")
     log("****************")
 
-    with open(pickle_path, "rb") as f:
-        old_readings = pickle.load(f)
-        readings.extend(old_readings)
+    try:
+        with open(pickle_path, "rb") as f:
+            old_readings = pickle.load(f)
+            readings.extend(old_readings)
+    except:
+        pass
 
     Thread(target=monitor_air, daemon=True).start()
     mqtt.start_client(service_name)
