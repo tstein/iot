@@ -6,36 +6,34 @@ import socket
 import sys
 
 import paho.mqtt.client
-from sh import signal_cli
+from pydbus import SystemBus
 
 import lib.mqtt
 
-TELLER_PHONE_CC = "TELLER_PHONE_CC"
 TED_PHONE = "TED_PHONE"
 TED_PHONE_CC = "TED_PHONE_CC"
 RUBA_PHONE = "RUBA_PHONE"
 RUBA_PHONE_CC = "RUBA_PHONE_CC"
-ENVVARS = [TELLER_PHONE_CC, TED_PHONE, TED_PHONE_CC, RUBA_PHONE, RUBA_PHONE_CC]
+ENVVARS = [TED_PHONE, TED_PHONE_CC, RUBA_PHONE, RUBA_PHONE_CC]
 
 # important objects
 mqttc = paho.mqtt.client.Client(socket.gethostname() + "-tellerd")
+bus = SystemBus()
+signal = bus.get("org.asamk.Signal")
 
-def signal(number, message):
-    signal_cli("-u", os.environ[TELLER_PHONE_CC],
-               "send",
-               "-m", message,
-               number)
+def send_signal(number, message):
+    signal.sendMessage(message, [], [number])
 
 def mms_tmo(number, message):
     os.system("echo | mail -s '{}' {}@tmomail.net".format(message, number))
 
 def tell_ted(message):
     logging.info("telling ted: " + message)
-    signal(os.environ[TED_PHONE_CC], message)
+    send_signal(os.environ[TED_PHONE_CC], message)
 
 def tell_ruba(message):
     logging.info("telling ruba: " + message)
-    signal(os.environ[RUBA_PHONE_CC], message)
+    send_signal(os.environ[RUBA_PHONE_CC], message)
 
 def on_message(client, userdata, message):
     tell_whom = message.topic.split("/")[1]
