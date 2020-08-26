@@ -4,6 +4,7 @@ import datetime
 import json
 import operator
 import socket
+import sys
 import time
 from collections import deque
 from itertools import islice
@@ -58,12 +59,8 @@ washer_state = "idle"
 dryer_state = "idle"
 
 def log(msg):
-    log_file = "/var/log/laundry.log"
-    tstamp = datetime.datetime.now().isoformat()
-    line = "{} - {}".format(tstamp, msg)
-    print(line)
-    with open(log_file, 'a') as l:
-        l.write(line + "\n")
+    sys.stdout.write(msg + "\n")
+    sys.stdout.flush()
 
 def tell(what):
     if time.time() - TELL_RUBA_UNTIL < TELL_RUBA_INTERVAL:

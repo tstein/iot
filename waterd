@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import datetime
 import io
 import json
 import pickle
@@ -9,7 +8,6 @@ import time
 from collections import defaultdict, deque, namedtuple
 from statistics import mean
 from threading import Thread
-from time import sleep
 
 import paho.mqtt.client
 import pytz
@@ -58,11 +56,8 @@ mqttc = paho.mqtt.client.Client(socket.gethostname())
 
 
 def log(msg):
-    log_file = "/var/log/water.log"
-    tstamp = datetime.datetime.now().isoformat()
-    with open(log_file, 'a') as l:
-        line = "{} - {}\n".format(tstamp, msg)
-        l.write(line)
+    sys.stdout.write(msg + "\n")
+    sys.stdout.flush()
 
 def avg(readings):
     return round(mean([r[1] for r in readings]), 3)
@@ -70,7 +65,7 @@ def avg(readings):
 def read_moisture(plant):
     data = smbus.read_word_data(plant.addr, MOISTURE_REG)
     val = (data >> 8) + ((data & 0xFF) << 8)
-    print("{} raw moisture: {}".format(plant.name, val))
+    log("{} raw moisture: {}".format(plant.name, val))
     return (val - 128) / 200.0
 
 def moisture_graph(plants):
@@ -126,7 +121,7 @@ def monitor_water(plants):
         ticks = ticks + 1
         prune_state()
         save_state()
-        sleep(read_interval)
+        time.sleep(read_interval)
 
 def water_plant(plant):
     log("watering {}".format(plant.name))

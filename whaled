@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import datetime
+import sys
 import time
 from collections import namedtuple
 from enum import Enum
@@ -34,11 +34,8 @@ CURRENT_STATE = True
 CURRENT_COLOR = Color.BLUE
 
 def log(msg):
-    log_file = expanduser("~/whale.log")
-    tstamp = datetime.datetime.now().isoformat()
-    with open(log_file, 'a') as l:
-        line = "{} - {}\n".format(tstamp, msg)
-        l.write(line)
+    sys.stdout.write(msg + "\n")
+    sys.stdout.flush()
 
 def setup():
     """None of these pins are outputs by default. set_color() will change pin

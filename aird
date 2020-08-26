@@ -2,11 +2,11 @@
 
 from __future__ import division
 
-import datetime
 import io
 import json
 import math
 import pickle
+import sys
 import time
 from collections import deque
 from os.path import expanduser
@@ -39,11 +39,8 @@ gpio = pigpio.pi()
 app = Flask(service_name)
 
 def log(msg):
-    log_file = "/var/log/air.log"
-    tstamp = datetime.datetime.now().isoformat()
-    with open(log_file, 'a') as l:
-        line = "{} - {}\n".format(tstamp, msg)
-        l.write(line)
+    sys.stdout.write(msg + "\n")
+    sys.stdout.flush()
 
 def c_to_f(c):
     return (c * 9 / 5) + 32
