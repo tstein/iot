@@ -1,0 +1,57 @@
+#!/usr/bin/python
+"""Daylight saving time sucks.
+
+Check if an hour has vanished or materialized, or is going to tomorrow, and
+send a heads-up."""
+
+import time
+from datetime import datetime, timedelta
+
+import pytz
+
+from lib import mqtt
+
+
+def time_slip(year, month, day):
+    tz = pytz.timezone("America/Los_Angeles")
+    # US DST changes occur at 2 AM.
+    before = datetime(year, month, day, 1).astimezone(tz)
+    after = datetime(year, month, day, 3).astimezone(tz)
+    slip = after - before - timedelta(hours=2)
+    return int(slip.total_seconds() / 3600)
+
+
+today = datetime.today()
+tomorrow = today + timedelta(days=1)
+slipped_today = time_slip(today.year, today.month, today.day)
+slipping_tomorrow = time_slip(tomorrow.year, tomorrow.month, tomorrow.day)
+# should only ever be one
+msgs = []
+
+if slipping_tomorrow == 0:
+    pass
+elif slipping_tomorrow == 1:
+    msgs.append("DST will create one hour tomorrow")
+elif slipping_tomorrow == -1:
+    msgs.append("DST will destroy one hour tomorrow")
+else:
+    # deal with it tomorrow
+    pass
+
+if slipped_today == 0:
+    pass
+elif slipped_today == 1:
+    msgs.append("DST has created one hour today")
+elif slipped_today == -1:
+    msgs.append("DST has destroyed one hour today")
+else:
+    msgs.append(
+        f"DST has supposedly slipped {slipped_today} hours. that's weird")
+
+if msgs:
+    cmd_name = __file__.split("/")[-1]
+    mqtt.start_client(cmd_name)
+    for msg in msgs:
+        mqtt.tell("ted", msg)
+    # give mqtt a sec to publish
+    time.sleep(1)
