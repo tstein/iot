@@ -1,0 +1,50 @@
+#!/usr/bin/python
+"""Some pitchers are really cool. Send a heads-up if they're scheduled to start
+today."""
+
+import itertools
+import json
+import sys
+import time
+from datetime import datetime
+
+import requests
+
+from lib import mqtt
+
+
+def games_today():
+    today = datetime.today()
+    url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard'\
+            '?sportId=1&startDate={}-{:02}-{:02}'.format(
+            today.year, today.month, today.day)
+    r = requests.get(url)
+    j = json.loads(r.text)
+    games = j['dates'][0]['games']
+    return games
+
+
+def pitchers(game):
+    for team in game['teams'].values():
+        if 'probablePitcher' in team:
+            yield team['probablePitcher']['fullName']
+
+
+cmd_name = __file__.split("/")[-1]
+target_pitchers = set(sys.argv[1:])
+if not target_pitchers:
+    print(f'usage: {cmd_name} PITCHER...')
+    sys.exit(1)
+
+starting_today = set(itertools.chain(*[pitchers(g) for g in games_today()]))
+target_pitchers_starting_today = [
+    s for s in starting_today
+    if any([t.lower() in s.lower() for t in target_pitchers])
+]
+if target_pitchers_starting_today:
+    msg = ', '.join(target_pitchers_starting_today) + ' starting today'
+
+    mqtt.start_client(cmd_name)
+    mqtt.tell("ted", msg)
+    # give mqtt a sec to publish
+    time.sleep(1)

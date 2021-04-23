@@ -25,7 +25,7 @@ today = datetime.today()
 tomorrow = today + timedelta(days=1)
 slipped_today = time_slip(today.year, today.month, today.day)
 slipping_tomorrow = time_slip(tomorrow.year, tomorrow.month, tomorrow.day)
-# should only ever be one
+# Should only ever be one, but send 'em all if I messed up.
 msgs = []
 
 if slipping_tomorrow == 0:
@@ -35,7 +35,7 @@ elif slipping_tomorrow == 1:
 elif slipping_tomorrow == -1:
     msgs.append("DST will destroy one hour tomorrow")
 else:
-    # deal with it tomorrow
+    # More than one hour? Deal with it in the 'today' block tomorrow.
     pass
 
 if slipped_today == 0:
