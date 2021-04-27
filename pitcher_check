@@ -4,10 +4,12 @@ today."""
 
 import itertools
 import json
+import operator
 import sys
 import time
 from datetime import datetime
 
+import dateutil.parser
 import requests
 
 from lib import mqtt
@@ -27,7 +29,10 @@ def games_today():
 def pitchers(game):
     for team in game['teams'].values():
         if 'probablePitcher' in team:
-            yield team['probablePitcher']['fullName']
+            name = team['probablePitcher']['fullName']
+            start = datetime.fromtimestamp(
+                dateutil.parser.isoparse(game['gameDate']).timestamp())
+            yield name, start.strftime("%H:%M")
 
 
 cmd_name = __file__.split("/")[-1]
@@ -39,10 +44,16 @@ if not target_pitchers:
 starting_today = set(itertools.chain(*[pitchers(g) for g in games_today()]))
 target_pitchers_starting_today = [
     s for s in starting_today
-    if any([t.lower() in s.lower() for t in target_pitchers])
+    if any([t.lower() in s[0].lower() for t in target_pitchers])
 ]
 if target_pitchers_starting_today:
-    msg = ', '.join(target_pitchers_starting_today) + ' starting today'
+    target_pitchers_starting_today.sort(key=operator.itemgetter(1))
+
+    def fmt(t):
+        return f'{t[0]} ({t[1]})'
+
+    msg = '⚾ today: ' + ', '.join(
+        [fmt(t) for t in target_pitchers_starting_today])
 
     mqtt.start_client(cmd_name)
     mqtt.tell("ted", msg)
