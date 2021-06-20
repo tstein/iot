@@ -8,54 +8,96 @@ import operator
 import sys
 import time
 from datetime import datetime
+from collections import namedtuple
 
 import dateutil.parser
 import requests
 
 from lib import mqtt
 
+Game = namedtuple('Game', ['away_starter', 'home_starter', 'start'])
+
 
 def games_today():
+    """ Pull down today's schedule and extract each game's starters and start
+    time. """
     today = datetime.today()
     url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard'\
             '?sportId=1&startDate={}-{:02}-{:02}'.format(
             today.year, today.month, today.day)
     r = requests.get(url)
     j = json.loads(r.text)
-    games = j['dates'][0]['games']
+    games_j = j['dates'][0]['games']
+
+    def parse_game(game_j):
+        away_starter, home_starter = None, None
+        away, home = game_j['teams']['away'], game_j['teams']['home']
+        if 'probablePitcher' in away:
+            away_starter = away['probablePitcher']['fullName']
+        if 'probablePitcher' in home:
+            home_starter = home['probablePitcher']['fullName']
+
+        start_time = datetime.fromtimestamp(
+            dateutil.parser.isoparse(game_j['gameDate']).timestamp())
+        start = start_time.strftime("%H:%M")
+
+        return Game(away_starter, home_starter, start)
+
+    games = [parse_game(g) for g in games_j]
     return games
 
 
-def pitchers(game):
-    for team in game['teams'].values():
-        if 'probablePitcher' in team:
-            name = team['probablePitcher']['fullName']
-            start = datetime.fromtimestamp(
-                dateutil.parser.isoparse(game['gameDate']).timestamp())
-            yield name, start.strftime("%H:%M")
+def match_pitcher(pitcher, target_pitchers):
+    """ Decide, fuzzily, whether this pitcher is one of our targets. """
+    if not pitcher: return False
+
+    def squash(p):
+        return p.lower().replace(" ", "")
+
+    return any([squash(t) in squash(pitcher) for t in target_pitchers])
 
 
-cmd_name = __file__.split("/")[-1]
-target_pitchers = set(sys.argv[1:])
-if not target_pitchers:
-    print(f'usage: {cmd_name} PITCHER...')
-    sys.exit(1)
+def filter_game(game, target_pitchers):
+    """ Transform games by setting non-target pitchers to None. """
+    away_target = match_pitcher(game.away_starter, target_pitchers)
+    home_target = match_pitcher(game.home_starter, target_pitchers)
+    return Game(game.away_starter if away_target else None,
+                game.home_starter if home_target else None, game.start)
 
-starting_today = set(itertools.chain(*[pitchers(g) for g in games_today()]))
-target_pitchers_starting_today = [
-    s for s in starting_today
-    if any([t.lower() in s[0].lower() for t in target_pitchers])
-]
-if target_pitchers_starting_today:
-    target_pitchers_starting_today.sort(key=operator.itemgetter(1))
 
-    def fmt(t):
-        return f'{t[0]} ({t[1]})'
+def filter_games(games, target_pitchers):
+    """ Filter games that don't have at least one target pitcher. """
+    games = [filter_game(g, target_pitchers) for g in games]
+    return [g for g in games if g.away_starter or g.home_starter]
 
-    msg = '⚾ today: ' + ', '.join(
-        [fmt(t) for t in target_pitchers_starting_today])
 
-    mqtt.start_client(cmd_name)
-    mqtt.tell("ted", msg)
-    # give mqtt a sec to publish
-    time.sleep(1)
+def main():
+    cmd_name = __file__.split("/")[-1]
+    target_pitchers = set(sys.argv[1:])
+    if not target_pitchers:
+        print(f'usage: {cmd_name} PITCHER...')
+        sys.exit(1)
+
+    target_games = filter_games(games_today(), target_pitchers)
+    if target_games:
+        # matchups of two target pitchers are coolest, then sort by start time
+        target_games.sort(key=lambda g: g.start)
+        target_games.sort(
+            key=lambda g: g.away_starter is None or g.home_starter is None)
+
+        def fmt_game(game):
+            if game.away_starter and game.home_starter:
+                return f"{game.away_starter} @ {game.home_starter} ({game.start})"
+            else:
+                starter = game.away_starter or game.home_starter
+                return f"{starter} ({game.start})"
+
+        msg = '⚾ today: ' + ', '.join([fmt_game(g) for g in target_games])
+        mqtt.start_client(cmd_name)
+        mqtt.tell("ted", msg)
+        # give mqtt a sec to publish
+        time.sleep(1)
+
+
+if __name__ == '__main__':
+    main()
